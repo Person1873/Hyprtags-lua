@@ -3,7 +3,9 @@
 DWM-style tags for Hyprland on Omarchy, written entirely in Hyprland's Lua config
 (`require`-able module, no compiled plugin) plus a Quickshell bar widget for the Omarchy shell.
 
-Tested on Omarchy 4.0.2, Hyprland 0.56.2 (Lua 5.5), Quickshell 0.3.1.
+Tested on Omarchy 4.0.2, Hyprland 0.56.2 (Lua 5.5), Quickshell 0.3.1. Built with an AI
+assistant; [AUTHORSHIP.md](AUTHORSHIP.md) says which decisions were human, which code was
+generated, and what has and has not been tested.
 
 ## How it works
 
