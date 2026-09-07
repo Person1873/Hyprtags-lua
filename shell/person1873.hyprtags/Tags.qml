@@ -85,8 +85,12 @@ BarWidget {
     call("hyprtags.emit()")
   }
 
+  // Monitor name as a Lua string literal. Names come from the compositor, but never
+  // splice text into code unescaped.
   function monArg() {
-    return monitorName !== "" ? ", \"" + monitorName + "\"" : ""
+    if (monitorName === "") return ""
+    var esc = monitorName.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
+    return ", \"" + esc + "\""
   }
 
   Connections {

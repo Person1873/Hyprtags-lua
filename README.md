@@ -26,6 +26,12 @@ Tested on Omarchy 4.0.2, Hyprland 0.56.2 (Lua 5.5), Quickshell 0.3.1.
 - **Nothing stays untagged.** Any mapped window outside the scratchpad that carries no tag is
   given tag 1 (`stray_tag`) and moved into the pair, checked after every change and on a 2 s
   sweep, so a window can never sit on a workspace the keys cannot reach.
+- **Focus comes back where you left it.** The focused window is remembered per view (per
+  monitor) and refocused when that view returns, dwm/pertag style.
+- **Self-protecting.** Every keybind is registered per chord, so one failing bind cannot take
+  the keyboard with it; failures are listed by `debug()`. A pair workspace dragged to another
+  monitor is sent home once per second, and the feature disables itself if the move does not
+  take (untested on real hardware, see below). Error toasts are rate-limited.
 - **The bar** gets one socket2 line per monitor on every change
   (`custom>>hyprtags>>eDP-1|v=2,3|o=1:2,2:1|u=|f=2`: viewed, occupied with counts, urgent,
   focused-window tags) and talks back with `hyprctl eval 'hyprtags.view(3, "eDP-1")'`.

@@ -67,6 +67,11 @@ local dirty = {}
 local emit_timer = nil
 local combo = { active = false, timer = nil }
 local log_lines = {}
+local lastfocus = {}      -- monname -> { [viewkey] = address }  (address of the window to refocus)
+local pending = {}        -- monname -> true while a deferred reconcile is queued
+local bounce_block = {}   -- ws id -> true while a move_to_monitor bounce is cooling down
+local bounce_disabled = false
+local bind_failures = {}  -- "keys: error" strings from the last setup_keys()
 
 local function log(fmt, ...)
   local line = os.date("%H:%M:%S ") .. string.format(fmt, ...)
@@ -74,7 +79,14 @@ local function log(fmt, ...)
   if #log_lines > 400 then table.remove(log_lines, 1) end
 end
 
+-- At most one toast per distinct message every `notify_every` seconds; the log keeps
+-- every occurrence.
+local notify_seen = {}
 local function notify(text)
+  local key = text:sub(1, 60)
+  local now = os.time()
+  if notify_seen[key] and now - notify_seen[key] < 10 then return end
+  notify_seen[key] = now
   pcall(function()
     hl.notification.create({ text = "hyprtags: " .. text, timeout = 6000 })
   end)
@@ -327,14 +339,27 @@ save_state = function()
     end
   end
   lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "  focus = {"
+  for _, name in ipairs(sorted_keys(lastfocus)) do
+    local parts = {}
+    for _, key in ipairs(sorted_keys(lastfocus[name])) do
+      parts[#parts + 1] = string.format("[%s]=%s", q(key), q(lastfocus[name][key]))
+    end
+    lines[#lines + 1] = string.format("    [%s] = {%s},", q(name), table.concat(parts, ","))
+  end
+  lines[#lines + 1] = "  },"
   lines[#lines + 1] = "}"
   local body = table.concat(lines, "\n") .. "\n"
 
-  os.execute("mkdir -p '" .. cfg.state_dir:gsub("'", "'\\''") .. "'")
   local path = cfg.state_dir .. "/state.lua"
   local tmp = path .. ".tmp"
   local f = io.open(tmp, "w")
-  if not f then log("cannot write %s", tmp) return end
+  if not f then
+    -- first run: the directory is missing. One fork, once.
+    os.execute("mkdir -p '" .. cfg.state_dir:gsub("'", "'\\''") .. "'")
+    f = io.open(tmp, "w")
+    if not f then log("cannot write %s", tmp) return end
+  end
   f:write(body)
   f:close()
   os.rename(tmp, path)
@@ -475,8 +500,46 @@ end
 local emit_all
 local schedule_emit
 
+local function view_key(set)
+  return table.concat(sorted_keys(set), ",")
+end
+
+-- Re-resolve a window captured earlier; nil if it is gone.
+local function alive(addr)
+  if not addr then return nil end
+  local ok, w = pcall(hl.get_window, "address:" .. tostring(addr))
+  if ok and w and w.mapped then return w end
+  return nil
+end
+
+-- Remember which window to come back to for the current view of a monitor.
+local function remember_focus(monname)
+  local p = pairs_by_mon[monname]
+  if not p then return end
+  local aw = hl.get_active_window()
+  if not aw or ws_id(aw) ~= p.vis then return end
+  lastfocus[monname] = lastfocus[monname] or {}
+  lastfocus[monname][view_key(view[monname])] = aw.address
+end
+
+local reconcile -- forward
+
+-- Deferred reconcile, coalesced per monitor: a burst of events queues one run.
+local function later(ms, fn)
+  hl.timer(guard("timer", fn), { timeout = ms, type = "oneshot" })
+end
+
+local function schedule_reconcile(monname, opts)
+  if pending[monname] then return end
+  pending[monname] = true
+  later(1, function()
+    pending[monname] = nil
+    reconcile(monname, opts or {})
+  end)
+end
+
 -- opts: { old_view = set | nil, prefer = address | nil, focus = bool }
-local function reconcile(monname, opts, depth)
+reconcile = function(monname, opts, depth)
   opts = opts or {}
   depth = depth or 0
   if busy then dirty[monname] = true return end
@@ -604,10 +667,12 @@ local function set_view(monname, newset, opts)
     schedule_emit()
     return
   end
+  remember_focus(monname)
   prev[monname] = set_copy(cur)
   view[monname] = set_copy(newset)
+  local remembered = lastfocus[monname] and lastfocus[monname][view_key(newset)]
   save_state()
-  reconcile(monname, { old_view = cur, prefer = opts and opts.prefer })
+  reconcile(monname, { old_view = cur, prefer = (opts and opts.prefer) or remembered })
 end
 
 local function assign_tags(w, members, monname)
@@ -818,6 +883,14 @@ function M.debug()
       tostring(ws_id(w)), tostring(w.class), table.concat(sorted_keys(members), ","), pos_string(pos) or "-",
       tostring(urgent[w.address] or false))
   end
+  lines[#lines + 1] = "focus memory:"
+  for name, tbl in pairs(lastfocus) do
+    for key, addr in pairs(tbl) do lines[#lines + 1] = string.format("  %s view={%s} -> %s", name, key, addr) end
+  end
+  if #bind_failures > 0 then
+    lines[#lines + 1] = "bind failures:"
+    for _, f in ipairs(bind_failures) do lines[#lines + 1] = "  " .. f end
+  end
   lines[#lines + 1] = "log:"
   for _, l in ipairs(log_lines) do lines[#lines + 1] = "  " .. l end
   local f = io.open(cfg.state_dir .. "/debug.txt", "w")
@@ -949,30 +1022,52 @@ local function combotag(k)
   combo_touch()
 end
 
+-- Bind one chord; a failure is logged and counted, never fatal, so a broken bind cannot
+-- take the rest of the keyboard with it.
 local function bind(keys, fn, desc)
   if not keys then return end
-  hl.bind(keys, guard(desc, fn), { description = desc })
+  local ok, err = pcall(hl.bind, keys, guard(desc, fn), { description = desc })
+  if not ok then
+    bind_failures[#bind_failures + 1] = keys .. ": " .. tostring(err)
+    log("bind %s failed: %s", keys, tostring(err))
+  end
+end
+
+-- Replace an Omarchy chord with ours as one step per chord: unbind, then bind. Every bind
+-- on a key fires, so the unbind has to come first; if the bind then fails, only that chord
+-- is lost and it is reported.
+local function unbind(keys)
+  pcall(hl.unbind, keys)
 end
 
 local function setup_keys()
+  bind_failures = {}
   if cfg.unbind_omarchy then
-    for i = 1, 10 do
-      local key = "code:" .. tostring(i + 9)
-      hl.unbind("SUPER + " .. key)
-      hl.unbind("SUPER + SHIFT + " .. key)
-      hl.unbind("SUPER + SHIFT + ALT + " .. key)
-    end
-    for _, k in ipairs(OMARCHY_UNBINDS) do hl.unbind(k) end
-    hl.bind("SUPER + ALT + O", hl.dsp.exec_cmd("omarchy-hyprland-window-pop"), { description = "Pop window out (float & pin)" })
+    for _, k in ipairs(OMARCHY_UNBINDS) do unbind(k) end
+    pcall(hl.bind, "SUPER + ALT + O", hl.dsp.exec_cmd("omarchy-hyprland-window-pop"), { description = "Pop window out (float & pin)" })
   end
-  if not cfg.bind_keys then return end
+  if not cfg.bind_keys then
+    if cfg.unbind_omarchy then
+      for i = 1, 10 do
+        local key = "code:" .. tostring(i + 9)
+        unbind("SUPER + " .. key); unbind("SUPER + SHIFT + " .. key); unbind("SUPER + SHIFT + ALT + " .. key)
+      end
+    end
+    return
+  end
 
   for k = 1, math.min(cfg.ntags, 9) do
     local key = "code:" .. tostring(k + 9)
+    if cfg.unbind_omarchy then
+      unbind("SUPER + " .. key); unbind("SUPER + SHIFT + " .. key); unbind("SUPER + SHIFT + ALT + " .. key)
+    end
     bind("SUPER + " .. key, function() comboview(k) end, "View tag " .. k)
     bind("SUPER + CTRL + " .. key, function() M.toggleview(k) end, "Toggle view of tag " .. k)
     bind("SUPER + SHIFT + " .. key, function() combotag(k) end, "Tag window " .. k)
     bind("SUPER + CTRL + SHIFT + " .. key, function() M.toggletag(k) end, "Toggle window tag " .. k)
+  end
+  if cfg.unbind_omarchy then
+    unbind("SUPER + code:19"); unbind("SUPER + SHIFT + code:19"); unbind("SUPER + SHIFT + ALT + code:19")
   end
   if cfg.fkeys then
     for k = 10, math.min(cfg.ntags, 21) do
@@ -999,15 +1094,15 @@ local function setup_keys()
   -- Combo reset on modifier release; the timer above is the fallback if this never fires.
   pcall(hl.bind, "SUPER + Super_L", combo_reset, { release = true, description = "hyprtags combo reset" })
   pcall(hl.bind, "SUPER + Super_R", combo_reset, { release = true, description = "hyprtags combo reset" })
+
+  if #bind_failures > 0 then
+    notify(#bind_failures .. " keybind(s) failed, see debug(): " .. bind_failures[1])
+  end
 end
 
 -- ---------------------------------------------------------------------------------------
 -- Events
 -- ---------------------------------------------------------------------------------------
-
-local function later(ms, fn)
-  hl.timer(guard("timer", fn), { timeout = ms, type = "oneshot" })
-end
 
 local function setup_events()
   hl.on("window.open", guard("window.open", function(w)
@@ -1027,7 +1122,13 @@ local function setup_events()
   end))
 
   hl.on("window.active", guard("window.active", function(w)
-    if w then urgent[w.address] = nil end
+    if w then
+      urgent[w.address] = nil
+      if not busy then
+        local mn = monname_of(w)
+        if mn then remember_focus(mn) end
+      end
+    end
     schedule_emit()
   end))
 
@@ -1052,28 +1153,35 @@ local function setup_events()
         if wm and wm.name ~= monname and pairs_by_mon[wm.name] then src = wm.name end
         if src or (id == p.vis and not should) or (id == p.hid and should) then
           if src then assign_tags(w, set_copy(view[monname]), monname) end
-          later(1, function() reconcile(monname, {}) end)
+          schedule_reconcile(monname)
         else
           schedule_emit()
         end
       else
+        local addr = w.address
         later(1, function()
-          local mn = adopt(w, view[monname])
+          local ww = alive(addr)
+          if not ww then return end
+          local mn = adopt(ww, view[monname])
           if mn then reconcile(mn, {}) end
         end)
       end
       return
     end
     if legacy_tag_for(id) then
+      local addr = w.address
+      local wm = w.monitor
+      local mn0 = wm and wm.name or nil
       later(1, function()
+        local ww = alive(addr)
+        if not ww then return end
         local k = legacy_tag_for(id)
-        local m = w.monitor
-        local mn = m and m.name or active_monname()
+        local mn = mn0 or active_monname()
         if not mn then return end
         local p = ensure_pair(mn)
-        assign_tags(w, { [k] = true }, mn)
+        assign_tags(ww, { [k] = true }, mn)
         local dest = view[mn][k] and p.vis or p.hid
-        dispatch(hl.dsp.window.move({ workspace = dest, follow = false, window = wsel(w) }))
+        dispatch(hl.dsp.window.move({ workspace = dest, follow = false, window = wsel(ww) }))
         reconcile(mn, {})
       end)
     end
@@ -1101,10 +1209,11 @@ local function setup_events()
       return
     end
     if id > 0 and legacy_tag_for(id) then
+      local wsm = ws.monitor
+      local mn0 = wsm and wsm.name or nil
       later(1, function()
         local k = legacy_tag_for(id)
-        local m = ws.monitor
-        local mn = m and m.name or active_monname()
+        local mn = mn0 or active_monname()
         if not mn then return end
         ensure_pair(mn)
         for _, w in ipairs(windows_on(id)) do adopt(w, nil) end
@@ -1154,15 +1263,30 @@ local function setup_events()
     end)
   end))
 
+  -- A pair workspace dragged to another monitor (Omarchy's SUPER+SHIFT+ALT+arrows) is
+  -- sent home. Guarded: one attempt per workspace per second, and if the attempt does not
+  -- actually move it back (the `workspace` key on this dispatcher is unverified on 0.56.2)
+  -- the feature switches itself off rather than ping-pong the active workspace.
   hl.on("workspace.move_to_monitor", guard("workspace.move_to_monitor", function(ws, m)
-    if busy or not ws or not m then return end
+    if busy or bounce_disabled or not ws or not m then return end
     local owner = mon_of_ws[ws.id]
-    if owner and owner ~= m.name then
-      local id = ws.id
-      later(1, function()
-        dispatch(hl.dsp.workspace.move({ workspace = id, monitor = owner }))
+    if not owner or owner == m.name then return end
+    local id = ws.id
+    if bounce_block[id] then return end
+    bounce_block[id] = true
+    later(1000, function() bounce_block[id] = nil end)
+    later(1, function()
+      dispatch(hl.dsp.workspace.move({ workspace = id, monitor = owner }))
+      later(50, function()
+        local wsn = hl.get_workspace(id)
+        local now = wsn and wsn.monitor and wsn.monitor.name or nil
+        if now ~= owner then
+          bounce_disabled = true
+          log("workspace %d did not return to %s (on %s); bounce disabled", id, owner, tostring(now))
+          notify("cannot send workspace " .. id .. " back to " .. owner .. "; leaving it")
+        end
       end)
-    end
+    end)
   end))
 end
 
@@ -1197,6 +1321,15 @@ local function init()
   slots = st.slots or {}
   local saved_view = st.view or {}
   local saved_prev = st.prev or {}
+  lastfocus = {}
+  for name, tbl in pairs(st.focus or {}) do
+    for key, addr in pairs(tbl) do
+      if alive(addr) then
+        lastfocus[name] = lastfocus[name] or {}
+        lastfocus[name][key] = addr
+      end
+    end
+  end
 
   -- rules for every monitor we have ever seen, so a replugged one lands on its pair
   for name in pairs(slots) do
