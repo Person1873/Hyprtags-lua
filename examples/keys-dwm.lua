@@ -1,5 +1,7 @@
--- Hyprtags keys, dwm-flexipatch flavour (TAGKEYS with the COMBO patch, F-keys for
--- tags 10..21, view-all toggle, focusurgent, winview, sticky, shiftboth, tagmon).
+-- Hyprtags keys: the author's personal dwm map, carried over from a dwm-flexipatch build
+-- (TAGKEYS with the COMBO patch, F-keys for tags 10..21, view-all toggle, focusurgent,
+-- winview, sticky, shiftboth, tagmon, layout keys). These are one person's bindings, not
+-- what dwm or flexipatch ship; edit to taste.
 --
 -- Use: copy to ~/.config/hypr/hyprtags-keys.lua and load with
 --   require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })

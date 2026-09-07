@@ -3,7 +3,7 @@
 -- Loaded by require("hyprtags").setup({}) after the engine is up. To customise, copy this
 -- file to ~/.config/hypr/hyprtags-keys.lua, edit it, and load that instead:
 --   require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })
--- A dwm-flavoured map lives in the repo under examples/keys-dwm.lua.
+-- The author's personal dwm-style map lives in the repo under examples/keys-dwm.lua.
 --
 -- Every bind on a key fires, so each Omarchy chord being replaced is unbound first;
 -- hyprtags.rebind does exactly that, one chord at a time, and reports failures.

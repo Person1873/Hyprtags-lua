@@ -104,7 +104,9 @@ failures) and `hyprtags.unbind(keys)`. Two maps ship:
 | `SUPER + CTRL + TAB` | previous view | former workspace |
 | `SUPER + mouse wheel` | next / previous occupied tag | scroll workspaces |
 
-**`examples/keys-dwm.lua`** is the dwm-flexipatch map. Copy it to
+**`examples/keys-dwm.lua`** is the author's own dwm map, carried over from a personal
+dwm-flexipatch build; it is not what dwm or flexipatch ship, and some of it is muscle memory
+rather than good design. Copy it to
 `~/.config/hypr/hyprtags-keys.lua`, edit freely, and load it with
 `require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })`. *n* is a digit `1`..`9` for
 tags 1..9, or `F1`..`F12` for tags 10..21.
@@ -216,7 +218,7 @@ manifest.json                   Omarchy plugin manifest (id person1873.hyprtags,
 shell/Tags.qml                  the bar widget
 hyprtags/init.lua               the engine (no keybinds)
 hyprtags/keys.lua               default keys: Omarchy's chords on tags
-examples/keys-dwm.lua           dwm-flexipatch keys, for ~/.config/hypr/hyprtags-keys.lua
+examples/keys-dwm.lua           the author's dwm-style keys, for ~/.config/hypr/hyprtags-keys.lua
 bin/hyprtags-windows            lost-window finder on omarchy-menu-select (--list to print)
 install.sh                      idempotent installer
 ```
