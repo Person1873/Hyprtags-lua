@@ -507,6 +507,30 @@ end
 
 -- Write ranks for every visible managed window on `monname`, for the given tag set
 -- (normally the view being left). Only rewrites WMT_POS when it actually changes.
+-- Geometry cannot see order in monocle (every tiled window has the same box), and Hyprland
+-- exposes no list index, so a geometry snapshot there would collapse to address order and
+-- discard any roll. What monocle needs preserved is only the cyclic order: re-showing
+-- inserts lowest rank first and focus memory restores the window on top, so keeping the
+-- ranks the windows already carry is exact. Unranked windows go after the ranked ones.
+local current_layout -- defined with the layout helpers below
+
+local function rank_sorted(wins, tagset)
+  local items = {}
+  for _, w in ipairs(wins) do
+    local _, pos = read_tags(w)
+    local best
+    for k, r in pairs(pos) do if tagset[k] and (not best or r < best) then best = r end end
+    items[#items + 1] = { w = w, r = best or 1e9 }
+  end
+  table.sort(items, function(a, b)
+    if a.r ~= b.r then return a.r < b.r end
+    return tostring(a.w.address) < tostring(b.w.address)
+  end)
+  local out = {}
+  for i, it in ipairs(items) do out[i] = it.w end
+  return out
+end
+
 local function snapshot_ranks(monname, tagset)
   local p = pairs_by_mon[monname]
   if not p then return end
@@ -514,7 +538,12 @@ local function snapshot_ranks(monname, tagset)
   for _, w in ipairs(windows_on(p.vis)) do
     if is_managed(w) then visible[#visible + 1] = w end
   end
-  local ordered = geometry_sorted(visible)
+  local ordered
+  if current_layout(monname) == "monocle" then
+    ordered = rank_sorted(visible, tagset)
+  else
+    ordered = geometry_sorted(visible)
+  end
   local counters = {}
   for _, w in ipairs(ordered) do
     local members, pos = read_tags(w)
@@ -608,7 +637,7 @@ end
 
 -- What the visible workspace is running right now. Only the algorithm name is readable
 -- (HL.Workspace.tiled_layout); options such as master orientation come from our record.
-local function current_layout(monname)
+current_layout = function(monname)
   local p = pairs_by_mon[monname]
   local m = monitor_by_name(monname)
   local ws = m and m.active_workspace
@@ -1375,8 +1404,11 @@ local function setup_events()
   hl.on("window.destroy", guard("window.destroy", forget))
 
   hl.on("window.active", guard("window.active", function(w)
-    if w then
-      urgent[w.address] = nil
+    -- the object can already be expired (address reads nil) when focus moves off a
+    -- closing window; treat that as "nothing to record"
+    local ok, addr = pcall(function() return w and w.address end)
+    if ok and addr then
+      urgent[addr] = nil
       if not busy then
         local mn = monname_of(w)
         if mn then remember_focus(mn) end

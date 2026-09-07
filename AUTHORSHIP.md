@@ -59,6 +59,17 @@ grammar; the window finder to strip markup and control characters from titles, b
 rollback and same-directory temporaries; a new `uninstall.sh` that removes only that block.
 The README was rewritten for readers who do not know dwm, at the human's request.
 
+## External review
+
+A second AI session the human runs (the one whose conversation prompted this project)
+reviewed the repository and reported that the geometry-based rank snapshot collapses to
+address order in monocle, where every tiled window has the same box, so a stack roll made
+on a monocle tag was discarded on the next view change. Correct. The fix chosen here (keep
+the ranks the windows already carry when the layout is monocle; only the cyclic order
+matters there because re-show inserts by rank and focus memory restores the top window)
+differs from the suggested one (snapshot on the roll dispatchers) and was verified live
+with ranks deliberately out of address order.
+
 ## What is borrowed
 
 The tag model, operation names and the behaviour of the pertag, combo, hidevacanttags,
