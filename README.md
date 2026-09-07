@@ -56,15 +56,9 @@ The other is a *parking lot* for windows that are not in the current view. Switc
 view means moving windows between the two, silently, so nothing else changes. The visible
 workspace is 101 on the first monitor, 201 on the second, and so on; the parking lots are
 102, 202 … Ordinary workspaces 1..99 are left alone. The parking lot runs the monocle
-layout, so a parked window is always sized to the full monitor rather than to an
-ever-smaller tile; size-sensitive clients see one full-size resize on the way out and one
-tile-size resize on the way back, never a sliver. Floating windows are never laid out, so
-they keep their exact position and size through any number of view changes (verified). If a
-tiled application genuinely cannot survive being resized, give it an Omarchy float rule
-(`o.window("<class>", { float = true })`) and it is out of the layout's hands everywhere,
-not only while parked. Parking windows as floating automatically was considered and
-rejected: it would still resize them, only to less predictable sizes, and would leave
-windows floating if a reload interrupted a round trip.
+layout, so a parked window is sized to the full monitor rather than to an ever-smaller
+tile. Floating windows are never laid out and keep their exact position and size through
+any number of view changes.
 
 **Tags are Hyprland window tags.** Hyprland lets any window carry named tags. A window on
 tags 3 and 5 carries `WMT3` and `WMT5`. Because these are plain names, Hyprland's own window
@@ -165,7 +159,7 @@ Each keys file lists the Omarchy chords it displaces in its header comment.
 
 ### Writing your own map
 
-Public functions on the global `hypr-dwm-land` table: `view(tags, mon?)`, `toggleview(k)`,
+Public functions on the global `hyprdwmland` table: `view(tags, mon?)`, `toggleview(k)`,
 `tag(tags, w?)`, `toggletag(k, w?)`, `view_all()`, `tag_all()`, `view_previous()`,
 `view_next(±1)`, `comboview(k)`, `combotag(k)`, `combo_enable("SUPER")`, `focusurgent()`,
 `winview()`, `sticky()`, `shiftboth(±1)`, `shiftview(±1)`, `tagmon(±1)`, `cycle_layout(±1)`,
@@ -179,7 +173,7 @@ takes the rest of the keyboard down.
 
 ## Using it from scripts
 
-Everything is on the global `hypr-dwm-land` table inside Hyprland's Lua state:
+Everything is on the global `hyprdwmland` table inside Hyprland's Lua state:
 
 ```sh
 hyprctl eval 'hyprdwmland.view(3)'              # optional second argument: monitor name
@@ -310,6 +304,13 @@ Tools that rearrange many windows this way have not been tested.
 **Tabbed groups move together.** Hyprland moves a whole group when one member moves, so a
 group has one membership; tagging any member tags them all. See "How it works".
 
+**A tiled application breaks when it is resized.** A tiled window is resized twice per
+round trip: to the full monitor when parked, to its tile when it returns. If an app cannot
+survive that, give it an Omarchy float rule (`o.window("<class>", { float = true })`); a
+floating window is never laid out, parked or not. Parking every window as floating was
+considered and rejected: it would still resize them, only to less predictable sizes, and a
+reload mid round-trip would leave windows floating.
+
 **Second monitor.** Written, untested. Report what you find.
 
 ## Prior art and credit
@@ -337,11 +338,11 @@ Built on [Hyprland](https://hyprland.org/) 0.56's Lua config and the
 ## Layout of this repo
 
 ```
-manifest.json                   Omarchy plugin manifest (id person1873.hypr-dwm-land, bar-widget)
-shell/Tags.qml                  the bar widget
-hyprdwmland/init.lua               the engine (no keybinds)
-hyprdwmland/keys.lua               default keys: Omarchy's chords on tags
-examples/keys-dwm.lua           the author's dwm-style keys, for ~/.config/hypr/hypr-dwm-land-keys.lua
-bin/hypr-dwm-land-windows            lost-window finder on omarchy-menu-select (--list to print)
-install.sh / uninstall.sh       the config edits, and their exact reversal
+manifest.json               Omarchy plugin manifest (id person1873.hypr-dwm-land, bar-widget)
+shell/Tags.qml              the bar widget
+hyprdwmland/init.lua        the engine (no keybinds)
+hyprdwmland/keys.lua        default keys: Omarchy's chords on tags
+examples/keys-dwm.lua       the author's dwm-style keys, for ~/.config/hypr/hypr-dwm-land-keys.lua
+bin/hypr-dwm-land-windows   lost-window finder on omarchy-menu-select (--list to print)
+install.sh / uninstall.sh   the config edits, and their exact reversal
 ```
