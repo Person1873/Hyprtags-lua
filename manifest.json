@@ -3,7 +3,7 @@
   "id": "person1873.hyprtags",
   "name": "Hyprtags",
   "version": "0.1.0",
-  "author": "John Pycroft",
+  "author": "Person1873",
   "description": "DWM-style tags for Hyprland (Lua module + bar widget)",
   "kinds": [
     "bar-widget"

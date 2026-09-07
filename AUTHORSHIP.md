@@ -1,6 +1,6 @@
 # Authorship
 
-This project was built in a pair-programming session between John Pycroft and an AI
+This project was built in a pair-programming session between Person1873 and an AI
 assistant (Claude, Anthropic) on 2026-09-07/08. This file says who decided what, so a reader
 can tell design intent from generated implementation, and what has actually been tested.
 
@@ -13,7 +13,7 @@ can tell design intent from generated implementation, and what has actually been
 - The final tag schema: plain `WMT<n>` membership tags so Hyprland's rule engine can match
   them, plus a separate `WMT_POS{n:rank}` position tag. Proposed by the human after the AI
   had argued for a compound form; the AI's compound schema was dropped as inferior.
-- Key map follows the human's own dwm-flexipatch `config.h` (read from his workstation),
+- Key map follows the human's own dwm-flexipatch `config.h` (read from their workstation),
   including the COMBO patch behaviour, MOD+0 toggling back, and F1..F12 as tags 10..21.
   Omarchy chords in the way get out of the way.
 - App keys go through Omarchy's default-app selectors, never hard-coded binaries.
