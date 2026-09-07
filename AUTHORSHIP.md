@@ -112,9 +112,17 @@ layout), the layout keys (set, toggle back, rotate, mirror, gaps), floating wind
 their geometry through park and return, monocle parking sizes, tabbed groups moving as one
 unit and taking the union of their members' tags when formed by hand.
 
-Not tested: anything with a second monitor (pair 201/202, `tagmon`, monitor removal, the
-move-workspace-to-monitor bounce), the shipped Omarchy-flavoured keys module loaded live,
-the finder's picker interaction, bar clicks.
+Tested on a headless second output (`hyprctl output create headless`, 2026-09-08): pair
+201/202 created and persisted, a window opening there taking its view, `tagmon` both ways,
+a silent cross-monitor move retagged to the destination's view, Omarchy's move-workspace-to-
+monitor bounced back within 50 ms, removal landing orphaned windows in the survivor's
+parking lot with tags intact, one bar event line per monitor. Also found there and fixed:
+the bounce guard disabled itself on monitor removal (Hyprland reports the migration as a
+move while the dead monitor is still listed).
+
+Not tested: a physical second monitor (hot-plug timing, scale, DPMS), the shipped
+Omarchy-flavoured keys module loaded live, the finder's picker interaction, bar clicks
+(the tag-click path was exercised by the human, who found the cursor warp).
 
 ## Errors made and corrected along the way
 

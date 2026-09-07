@@ -1740,23 +1740,32 @@ local function setup_events()
   end))
 
   -- A pair workspace dragged to another monitor (Omarchy's SUPER+SHIFT+ALT+arrows) is
-  -- sent home. Guarded: one attempt per workspace per second, and if the attempt does not
-  -- actually move it back (the `workspace` key on this dispatcher is unverified on 0.56.2)
-  -- the feature switches itself off rather than ping-pong the active workspace.
+  -- sent home (verified on a headless second output: back within 50 ms). Guarded: one
+  -- attempt per workspace per second, and if an attempt does not move it back while the
+  -- owner still exists, the feature switches itself off rather than ping-pong.
   hl.on("workspace.move_to_monitor", guard("workspace.move_to_monitor", function(ws, m)
     if busy or bounce_disabled or not ws or not m then return end
     local owner = mon_of_ws[ws.id]
     if not owner or owner == m.name then return end
+    -- Hyprland migrates a removed monitor's workspaces to a survivor and reports it as a
+    -- move; there is no home to send them to, and monitor.removed handles their windows.
+    if not monitor_by_name(owner) then return end
     local id = ws.id
     if bounce_block[id] then return end
     bounce_block[id] = true
     later(1000, function() bounce_block[id] = nil end)
     later(1, function()
+      log("workspace %d arrived on %s; sending it back to %s", id, tostring(m.name), owner)
       dispatch(hl.dsp.workspace.move({ workspace = id, monitor = owner }))
       later(50, function()
         local wsn = hl.get_workspace(id)
         local now = wsn and wsn.monitor and wsn.monitor.name or nil
-        if now ~= owner then
+        if now == owner then
+          log("workspace %d is back on %s", id, owner)
+        elseif not monitor_by_name(owner) then
+          -- the owner disappeared in between: this was a monitor removal, not a drag
+          log("workspace %d stays on %s: %s is gone", id, tostring(now), owner)
+        else
           bounce_disabled = true
           log("workspace %d did not return to %s (on %s); bounce disabled", id, owner, tostring(now))
           notify("cannot send workspace " .. id .. " back to " .. owner .. "; leaving it")

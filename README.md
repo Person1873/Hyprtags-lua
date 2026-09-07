@@ -266,7 +266,8 @@ socat -u UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket
 ```
 
 What has been exercised, and what has not, is listed in [AUTHORSHIP.md](AUTHORSHIP.md).
-Anything involving a second monitor is still untested.
+Multi-monitor behaviour was tested on a headless output (`hyprctl output create headless`),
+not on physical hardware.
 
 ## FAQ: tags are not workspaces
 
@@ -311,7 +312,11 @@ floating window is never laid out, parked or not. Parking every window as floati
 considered and rejected: it would still resize them, only to less predictable sizes, and a
 reload mid round-trip would leave windows floating.
 
-**Second monitor.** Written, untested. Report what you find.
+**Second monitor.** Tested on a headless output only: the pair 201/202, windows opening
+there, `tagmon` both ways, a silent cross-monitor move taking the destination's view,
+Omarchy's "move workspace to monitor" being sent back, and removal landing the orphaned
+windows in the survivor's parking lot with their tags. Physical hot-plug, differing scales
+and DPMS have not been exercised. Report what you find.
 
 ## Prior art and credit
 
