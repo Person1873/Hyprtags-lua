@@ -257,9 +257,14 @@ local function next_free_slot()
   return s
 end
 
+-- The parking workspace is never shown but Hyprland still lays it out, and every parked
+-- window receives that size. Under dwindle that is a shrinking tile (measured: two parked
+-- windows at half width, ten at a tenth), which is hostile to size-sensitive clients.
+-- Monocle gives every parked window the full monitor, so a park is one predictable
+-- full-size configure and a return is one tile configure, whatever the count.
 local function register_rules(monname, vis, hid)
   pcall(hl.workspace_rule, { workspace = tostring(vis), monitor = monname, persistent = true, default = true })
-  pcall(hl.workspace_rule, { workspace = tostring(hid), monitor = monname, persistent = true })
+  pcall(hl.workspace_rule, { workspace = tostring(hid), monitor = monname, persistent = true, layout = "monocle" })
 end
 
 local save_state -- forward
