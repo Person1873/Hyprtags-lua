@@ -89,6 +89,15 @@ asked for before submission, confirmed from the log, fixed, and re-tested with f
 cursor position checked together. Lesson recorded: a test that checks one side effect
 cannot vouch for the operation that produces it.
 
+## Omarchy dependence, narrowed
+
+The human asked what stopped this being a generic Hyprland plugin. Answer after audit:
+one notification call in the engine (replaced with Hyprland's own overlay) and nothing
+else; the widget, installer and finder are the Omarchy layer. The README gained a
+"Without Omarchy" section with the two-step install and the bar protocol, and
+`examples/waybar-tags.sh` shows the protocol consumed by a different bar. That script's
+parsing was run against the live socket; waybar itself was not installed to try it.
+
 ## What is borrowed
 
 The tag model, operation names and the behaviour of the pertag, combo, hidevacanttags,

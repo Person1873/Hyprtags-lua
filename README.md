@@ -1,7 +1,8 @@
 # hypr-dwm-land
 
-Tags instead of workspaces for Hyprland on Omarchy, the way dwm does it. A Lua module for
-Hyprland's config plus a bar widget for the Omarchy shell. No compiled code.
+Tags instead of workspaces for Hyprland, the way dwm does it. A Lua module for Hyprland's
+Lua config, plus a bar widget and installer for the Omarchy shell. No compiled code. The
+module itself needs only Hyprland; see [Without Omarchy](#without-omarchy).
 
 ![the bar widget showing tags 1, 2 and 4](preview.png)
 
@@ -190,6 +191,53 @@ tags), `hyprctl workspaces -j`, or the debug file.
 the Omarchy picker; picking one focuses it, which reveals its tag. `--list` prints the lines
 instead. The dwm map's author binds it to `SUPER + ALT + W` in their own config.
 
+## Without Omarchy
+
+The engine is plain Hyprland Lua and has no Omarchy dependency: it reads and writes
+Hyprland window tags, moves windows with `hl.dsp.window.move`, listens with `hl.on`, and
+uses Hyprland's own notification overlay. Omarchy provides the bar widget, the installer and
+the window finder's picker; a per-workspace layout file it happens to ship is read if
+present and ignored if not.
+
+Install by hand on any Hyprland with a Lua config (0.56 or later):
+
+```sh
+cp -r hyprdwmland ~/.config/hypr/          # the module directory
+```
+
+and at the end of `~/.config/hypr/hyprland.lua`, after your own keybindings:
+
+```lua
+require("hyprdwmland").setup({})           -- or { keys = "hypr.hypr-dwm-land-keys" } for a copy of examples/keys-dwm.lua
+```
+
+Hyprland's Lua loader searches `<config dir>/?.lua` and `<config dir>/?/init.lua`, so no
+`package.path` line is needed. The default keys module unbinds Omarchy's chords before
+binding; on a non-Omarchy config those unbinds are no-ops, and it then binds the standard
+`SUPER + n` family. Reload with `hyprctl reload`, check `hyprctl configerrors`.
+
+**Any bar can show tags.** The engine publishes one line per monitor on Hyprland's event
+socket (`.socket2.sock`) whenever anything changes, as a `custom` event:
+
+```
+custom>>hyprdwmland>>eDP-1|v=2,3|o=1:2,2:1,5:1|u=5|f=2
+```
+
+| field | meaning |
+|---|---|
+| first field | monitor name |
+| `v=` | tags in the view, comma-separated |
+| `o=` | occupied tags as `tag:count` (a window on two tags counts on both) |
+| `u=` | tags with an urgent window |
+| `f=` | tags of the focused window, empty if focus is elsewhere |
+
+Ask for a fresh line with `hyprctl eval 'hyprdwmland.emit()'`; act on clicks with
+`hyprctl eval 'hyprdwmland.view(3, "eDP-1")'`, `toggleview`, `tag`, `toggletag` and the rest
+of the functions under [Writing your own map](#writing-your-own-map).
+[`examples/waybar-tags.sh`](examples/waybar-tags.sh) turns the stream into waybar
+`custom` module JSON in about forty lines; its parsing is exercised, waybar itself was not
+run here. The Omarchy widget in `shell/Tags.qml` is the reference consumer.
+
 ## Options
 
 `require("hyprdwmland").setup({ ... })` accepts:
@@ -348,6 +396,7 @@ shell/Tags.qml              the bar widget
 hyprdwmland/init.lua        the engine (no keybinds)
 hyprdwmland/keys.lua        default keys: Omarchy's chords on tags
 examples/keys-dwm.lua       the author's dwm-style keys, for ~/.config/hypr/hypr-dwm-land-keys.lua
+examples/waybar-tags.sh     the bar protocol turned into waybar custom-module JSON
 bin/hypr-dwm-land-windows   lost-window finder on omarchy-menu-select (--list to print)
 install.sh / uninstall.sh   the config edits, and their exact reversal
 ```

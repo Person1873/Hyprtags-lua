@@ -1242,9 +1242,9 @@ function M.set_layout(layout, opts, monname)
   layouts[monname][slot] = rec
   apply_layout(monname, rec)
   save_state()
-  -- label comes from cfg.layouts (config, not data); still restrict to a safe charset
+  -- Hyprland's own notification overlay: no dependency on Omarchy's notifier
   local label = tostring(layout_label(rec)):gsub("[^%w %-]", "")
-  hl.exec_cmd("/usr/bin/omarchy-notification-send -g 󱂬 'Layout: " .. label .. "'")
+  pcall(hl.notification.create, { text = "Layout: " .. label, timeout = 1500 })
 end
 
 -- Walk cfg.layouts forwards or backwards from the current view's layout.
