@@ -42,7 +42,7 @@ if [[ $REPO != "$PLUG" ]]; then
     while IFS= read -r -d '' f; do
       mkdir -p "$PLUG/$(dirname "$f")"
       replace_file "$PLUG/$f" <"$f"
-      [[ -x $f ]] && chmod u+x "$PLUG/$f"
+      if [[ -x $f ]]; then chmod u+x "$PLUG/$f"; fi
     done)
 fi
 omarchy plugin validate "$PLUG"

@@ -222,7 +222,8 @@ timestamped backup beside every file it edits:
 Files the module writes at run time, all under `~/.local/state/hyprtags/`: `state`, a
 passive line-format file (per-monitor workspace slot, current and previous view, focused
 window per view, layout per tag) that is parsed with anchored patterns and never executed;
-and `debug.txt` on request. No network, no `sudo`, no daemons, no other files.
+and `debug.txt` on request. No network access, no daemons, no other files. No sudo or
+pkexec is required.
 
 Window tags themselves live in the compositor and vanish when Hyprland exits.
 
