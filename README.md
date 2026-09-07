@@ -218,10 +218,13 @@ The model is [dwm](https://dwm.suckless.org/) by the suckless team: tags as a se
 behaviours here are re-implementations of dwm patches from their descriptions: pertag
 (per-tag layout), combo (hold the modifier, press several tags), hidevacanttags, winview,
 shiftboth, focusurgent, and sendmon/tagmon. The author's key map comes from a
-[dwm-flexipatch](https://github.com/bakkeby/dwm-flexipatch) build. No dwm or flexipatch
-source is copied or translated in this repo; everything is written against Hyprland's Lua
-API, and the parts dwm never needed (moving windows between workspaces, remembering stack
-position across the move) are the bulk of the code. dwm is MIT/X Consortium licensed.
+[dwm-flexipatch](https://github.com/bakkeby/dwm-flexipatch) build. The code was written by
+an AI assistant that has dwm's source and its patches in its training data and drew on that
+memory for behaviour (for example pertag's rule that a combined view uses its lowest tag's
+slot). No dwm or flexipatch source is reproduced or structurally translated here: the data
+model is Hyprland's (window tags, windows moved between two workspaces) rather than dwm's
+client list and bitmasks, and the parts dwm never needed are the bulk of the code. Readers
+are welcome to compare. dwm is MIT/X Consortium licensed.
 
 Built on [Hyprland](https://hyprland.org/) 0.56's Lua config and the
 [Omarchy](https://omarchy.org/) shell plugin system.

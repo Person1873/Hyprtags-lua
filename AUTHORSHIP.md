@@ -50,10 +50,14 @@ can tell design intent from generated implementation, and what has actually been
 
 ## What is borrowed
 
-Design only. The tag model, operation names and the behaviour of the pertag, combo,
-hidevacanttags, winview, shiftboth, focusurgent and tagmon patches come from dwm and its
-patch ecosystem, reimplemented from their documented behaviour. No dwm code was read into
-this project or translated; see "Prior art and credit" in the README.
+The tag model, operation names and the behaviour of the pertag, combo, hidevacanttags,
+winview, shiftboth, focusurgent and tagmon patches come from dwm and its patch ecosystem.
+No dwm source was opened during this project, but the AI that wrote the code has dwm and
+its patches in its training data and recalled specific behaviour from that memory (the
+pertag lowest-tag rule, combo semantics, dwm's same-tagset no-op in `view`). The human
+raised this point; the earlier wording "reimplemented from description" was the AI's and
+understated it. No dwm code is reproduced or structurally translated; the model here is
+Hyprland's, not dwm's. See "Prior art and credit" in the README.
 
 ## Tested versus untested (as of the first public push)
 
