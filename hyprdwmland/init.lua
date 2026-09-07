@@ -37,6 +37,7 @@ local cfg = {
   keys = "hyprdwmland.keys",
   stray_sweep = 2000,   -- ms: adopt untagged windows this often (0 = only on changes)
   stray_tag = 1,        -- untagged windows outside the scratchpad land here
+  warp_cursor = false,  -- let Hyprland warp the cursor to windows the engine focuses?
   combo_timeout = 1000, -- ms: fallback for the modifier-release detection
   emit_delay = 30,      -- ms: debounce for bar events
   -- Per-tag layouts (dwm PERTAG): the visible workspace's layout is remembered per view
@@ -111,6 +112,23 @@ local function dispatch(d)
   local ok, err = pcall(hl.dispatch, d)
   if not ok then log("dispatch failed: %s", tostring(err)) end
   return ok
+end
+
+-- Hyprland's focus dispatcher warps the cursor to the window unless cursor:no_warps is
+-- set. A view change focuses windows on the user's behalf, so it must not move their
+-- mouse. hl.config applies live and emits no reload event (verified), so the setting is
+-- raised only around the engine's own focus calls and put back afterwards.
+local function without_warp(fn)
+  if cfg.warp_cursor then return fn() end
+  local prev = hl.get_config("cursor.no_warps")
+  if prev ~= true then pcall(hl.config, { cursor = { no_warps = true } }) end
+  local ok, err = pcall(fn)
+  if prev ~= true then pcall(hl.config, { cursor = { no_warps = false } }) end
+  if not ok then error(err, 0) end
+end
+
+local function focus_window(w)
+  without_warp(function() dispatch(hl.dsp.focus({ window = wsel(w) })) end)
 end
 
 -- ---------------------------------------------------------------------------------------
@@ -617,7 +635,7 @@ local function fix_focus(monname, prefer)
   local aw = hl.get_active_window()
   if aw and ws_id(aw) == p.vis then
     -- focus is already fine; only an explicit preference overrides it
-    if pick and pick.address ~= aw.address then dispatch(hl.dsp.focus({ window = wsel(pick) })) end
+    if pick and pick.address ~= aw.address then focus_window(pick) end
     return
   end
   if not pick then
@@ -626,7 +644,7 @@ local function fix_focus(monname, prefer)
     end
   end
   if pick then
-    dispatch(hl.dsp.focus({ window = wsel(pick) }))
+    focus_window(pick)
   else
     local m = monitor_by_name(monname)
     if m and m.active_workspace and m.active_workspace.id ~= p.vis then
@@ -828,7 +846,7 @@ reconcile = function(monname, opts, depth)
     for _, it in ipairs(show) do
       dispatch(hl.dsp.window.move({ workspace = p.vis, follow = false, window = wsel(it.w) }))
       -- chain focus so dwindle inserts the next one relative to this one
-      dispatch(hl.dsp.focus({ window = wsel(it.w) }))
+      focus_window(it.w)
     end
     for _, it in ipairs(show) do
       local f = fs_state[it.w.address]
@@ -1086,7 +1104,7 @@ function M.focusurgent()
     local k = min_key(members)
     if k then set_view(monname, { [k] = true }, { prefer = w.address }) end
   end
-  dispatch(hl.dsp.focus({ window = wsel(w) }))
+  focus_window(w)
 end
 
 function M.sticky()

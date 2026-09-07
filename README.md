@@ -207,6 +207,7 @@ instead. The dwm map's author binds it to `SUPER + ALT + W` in their own config.
 | `stray_tag` | `1` | where an untagged window is put |
 | `stray_sweep` | `2000` | ms between sweeps for untagged windows; `0` = only on changes |
 | `layouts` | dwindle, master, centre master, monocle, scrolling | what `cycle_layout` walks |
+| `warp_cursor` | `false` | let Hyprland warp the mouse to windows the engine focuses on a view change |
 | `combo_timeout` | `1000` | ms fallback for ending a held-modifier combo |
 | `emit_delay` | `30` | ms debounce for bar updates |
 
