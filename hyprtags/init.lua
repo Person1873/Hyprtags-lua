@@ -1112,14 +1112,17 @@ local function setup_events()
     if monname then reconcile(monname, {}) else schedule_emit() end
   end))
 
-  hl.on("window.close", guard("window.close", function(w)
-    if w then urgent[w.address] = nil fs_state[w.address] = nil end
+  -- On destroy the object is already expired and its address reads as nil.
+  local function forget(w)
+    local ok, addr = pcall(function() return w and w.address end)
+    if ok and addr then
+      urgent[addr] = nil
+      fs_state[addr] = nil
+    end
     schedule_emit()
-  end))
-  hl.on("window.destroy", guard("window.destroy", function(w)
-    if w then urgent[w.address] = nil fs_state[w.address] = nil end
-    schedule_emit()
-  end))
+  end
+  hl.on("window.close", guard("window.close", forget))
+  hl.on("window.destroy", guard("window.destroy", forget))
 
   hl.on("window.active", guard("window.active", function(w)
     if w then
