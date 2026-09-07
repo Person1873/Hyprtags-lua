@@ -3,13 +3,13 @@
   "id": "person1873.hyprtags",
   "name": "Hyprtags",
   "version": "0.1.0",
-  "author": "person1873",
-  "description": "DWM-style tag indicators driven by the hyprtags Hyprland Lua module",
+  "author": "John Pycroft",
+  "description": "DWM-style tags for Hyprland (Lua module + bar widget)",
   "kinds": [
     "bar-widget"
   ],
   "entryPoints": {
-    "barWidget": "Tags.qml"
+    "barWidget": "shell/Tags.qml"
   },
   "barWidget": {
     "displayName": "Tags",
@@ -21,7 +21,11 @@
       "ntags": 21
     },
     "schema": [
-      { "key": "ntags", "type": "number", "label": "Number of tags" }
+      {
+        "key": "ntags",
+        "type": "number",
+        "label": "Number of tags"
+      }
     ]
   }
 }

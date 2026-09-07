@@ -42,21 +42,26 @@ actually sit.
 
 ## Install
 
+The repo is an Omarchy shell plugin (manifest at the root) that also carries the Hyprland Lua
+module, so Omarchy's plugin installer brings everything in:
+
 ```sh
-git clone <this repo> ~/Hyprtags-lua
-~/Hyprtags-lua/install.sh
+omarchy plugin add https://github.com/Person1873/Hyprtags-lua.git --enable
+~/.config/omarchy/plugins/person1873.hyprtags/install.sh
 ```
 
-The script copies the widget into `~/.config/omarchy/plugins/person1873.hyprtags/` (Omarchy
-refuses symlinked plugin folders), swaps `omarchy.workspaces` for it in
-`~/.config/omarchy/shell.json`, appends the loader to `~/.config/hypr/hyprland.lua`, reloads
-Hyprland and restarts the shell. Every config edit is backed up as `*.bak.<timestamp>` and made
-only once; re-run the script after editing the widget.
+`install.sh` swaps `omarchy.workspaces` for the tags widget in `~/.config/omarchy/shell.json`,
+appends the loader to `~/.config/hypr/hyprland.lua`, reloads Hyprland and restarts the shell.
+Each config edit is backed up as `*.bak.<timestamp>` and made only once. Updates are
+`omarchy plugin update person1873.hyprtags`, then `hyprctl reload` and `omarchy restart shell`.
 
-The loader line is:
+From a development checkout elsewhere (`~/Hyprtags-lua`), `./install.sh` copies the tree into
+the plugin folder instead (Omarchy refuses symlinked plugin folders); re-run it after edits.
+
+The loader it writes is:
 
 ```lua
-package.path = os.getenv("HOME") .. "/Hyprtags-lua/?.lua;" .. os.getenv("HOME") .. "/Hyprtags-lua/?/init.lua;" .. package.path
+package.path = "<plugin dir>/?.lua;<plugin dir>/?/init.lua;" .. package.path
 require("hyprtags").setup({})
 ```
 
@@ -186,10 +191,11 @@ backup (or put `omarchy.workspaces` back), delete
 ## Layout
 
 ```
-bin/hyprtags-windows            lost-window finder on omarchy-menu-select (--list to print)
+manifest.json                   Omarchy plugin manifest (id person1873.hyprtags, bar-widget)
+shell/Tags.qml                  the bar widget
 hyprtags/init.lua               the engine (no keybinds)
 hyprtags/keys.lua               default keys: Omarchy's chords on tags
 examples/keys-dwm.lua           dwm-flexipatch keys, for ~/.config/hypr/hyprtags-keys.lua
-shell/person1873.hyprtags/        Omarchy shell bar-widget (manifest.json, Tags.qml)
+bin/hyprtags-windows            lost-window finder on omarchy-menu-select (--list to print)
 install.sh                      idempotent installer
 ```
