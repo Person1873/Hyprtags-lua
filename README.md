@@ -69,7 +69,7 @@ Tag keys (owned by the module; follow dwm-flexipatch `TAGKEYS` with the combo pa
 | `SUPER + SHIFT + 1..9` | put the focused window on that tag only (combo: several tags) |
 | `SUPER + CTRL + 1..9` | toggle the tag in the view |
 | `SUPER + CTRL + SHIFT + 1..9` | toggle the tag on the focused window |
-| `SUPER + 0` / `SUPER + SHIFT + 0` | view all / tag with all |
+| `SUPER + 0` / `SUPER + SHIFT + 0` | view all (again: back to the previous view) / tag with all |
 | `SUPER + TAB` | previous view (back and forth) |
 | `SUPER + U` | focus the urgent window (reveals its tag) |
 | `SUPER + O` | view the focused window's tags |
@@ -82,6 +82,12 @@ focused window, **Ctrl** + right = toggle the tag on it. (SUPER + mouse is consu
 Omarchy's global drag/resize binds and never reaches the bar.) Empty tags are hidden; viewed
 tags always show; the tag holding the focused window shows a glyph; urgent tags use the bar's
 urgent colour.
+
+Scratchpad: Omarchy's `SUPER + ALT + S` sends the focused window to the scratchpad (it keeps
+its tags) and `SUPER + S` shows or hides the scratchpad. To bring a window back, focus it in
+the shown scratchpad and press any tag key (`SUPER + SHIFT + 3`, or `SUPER + CTRL + SHIFT + 3`
+to keep its old tags too): it leaves the scratchpad and lands on screen if one of its tags is
+viewed, otherwise parked on that tag.
 
 Omarchy chords displaced by the module: `SUPER [+SHIFT[+ALT]] + 1..0` (workspace switch/move),
 `SUPER [+SHIFT|+CTRL] + TAB`, `SUPER + mouse_up/down`, `SUPER + O` ("Pop window out", now

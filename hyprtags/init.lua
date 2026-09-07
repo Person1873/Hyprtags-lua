@@ -440,14 +440,18 @@ end
 local function fix_focus(monname, prefer)
   local p = pairs_by_mon[monname]
   if not p then return end
-  local aw = hl.get_active_window()
-  if aw and ws_id(aw) == p.vis then return end
   local cands = windows_on(p.vis)
   local pick = nil
   if prefer then
     for _, w in ipairs(cands) do
       if w.address == prefer then pick = w break end
     end
+  end
+  local aw = hl.get_active_window()
+  if aw and ws_id(aw) == p.vis then
+    -- focus is already fine; only an explicit preference overrides it
+    if pick and pick.address ~= aw.address then dispatch(hl.dsp.focus({ window = wsel(pick) })) end
+    return
   end
   if not pick then
     for _, w in ipairs(cands) do
@@ -613,11 +617,26 @@ local function assign_tags(w, members, monname)
   write_tags(w, members, newpos)
 end
 
+-- Focused window as the target of a tag operation. Scratchpad (special) windows are
+-- allowed: tagging one pulls it out into the pair. Pinned windows are sticky, skip them.
 local function target_window(w)
   if w then return w end
   local aw = hl.get_active_window()
-  if not aw or is_special(aw) or aw.pinned then return nil end
+  if not aw or aw.pinned then return nil end
   return aw
+end
+
+-- After tagging a window that sits on a special workspace, move it into the pair:
+-- on screen if one of its tags is viewed, else parked hidden. Returns the address to
+-- prefer for focus, or nil.
+local function pull_from_special(w, monname)
+  if not is_special(w) then return nil end
+  local p = monname and pairs_by_mon[monname]
+  if not p then return nil end
+  local members = read_tags(w)
+  local visible = intersects(members, view[monname])
+  dispatch(hl.dsp.window.move({ workspace = visible and p.vis or p.hid, follow = false, window = wsel(w) }))
+  return visible and w.address or nil
 end
 
 local function next_focus_after(w)
@@ -648,7 +667,16 @@ function M.toggleview(k, monname)
   set_view(monname, s)
 end
 
-function M.view_all(monname) set_view(monname, all_tags()) end
+-- dwm SUPER+0: view everything; pressed again, go back to where you were.
+function M.view_all(monname)
+  monname = resolve_mon(monname)
+  if not monname then return end
+  if set_eq(view[monname], all_tags()) then
+    M.view_previous(monname)
+  else
+    set_view(monname, all_tags())
+  end
+end
 
 function M.view_previous(monname)
   monname = resolve_mon(monname)
@@ -663,7 +691,8 @@ function M.tag(tags, w, monname)
   if set_empty(s) then return end
   monname = monname_of(w) or resolve_mon(monname)
   assign_tags(w, s, monname)
-  if monname then reconcile(monname, { prefer = next_focus_after(w) }) end
+  local prefer = pull_from_special(w, monname) or next_focus_after(w)
+  if monname then reconcile(monname, { prefer = prefer }) end
 end
 
 function M.toggletag(k, w, monname)
@@ -679,7 +708,8 @@ function M.toggletag(k, w, monname)
   end
   monname = monname_of(w) or resolve_mon(monname)
   assign_tags(w, members, monname)
-  if monname then reconcile(monname, { prefer = next_focus_after(w) }) end
+  local prefer = pull_from_special(w, monname) or next_focus_after(w)
+  if monname then reconcile(monname, { prefer = prefer }) end
 end
 
 function M.tag_all(w) M.tag(sorted_keys(all_tags()), w) end
