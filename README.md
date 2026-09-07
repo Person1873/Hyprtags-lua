@@ -92,6 +92,11 @@ it goes on tag 5 instead: on screen if 5 is in view, otherwise parked.
 and moved into the pair, on every change and on a 2 s sweep, so a window can never sit on a
 workspace the keys cannot reach.
 
+**Tabbed groups are one unit.** Hyprland moves a whole group when any member moves, so a
+group has one membership: tagging any member tags them all, and a group formed by hand from
+windows on different tags takes the union of their tags. A tag command on a grouped window
+therefore never splits the group.
+
 **The scratchpad is untouched.** Omarchy's `special:scratchpad` keeps working exactly as
 shipped (`SUPER + S` show/hide, `SUPER + ALT + S` send). Windows there keep their tags but are
 not counted on the bar. To bring one back, focus it in the shown scratchpad and press any

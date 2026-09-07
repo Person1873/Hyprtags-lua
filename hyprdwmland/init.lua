@@ -240,6 +240,40 @@ local function is_managed(w)
   return not set_empty(m)
 end
 
+-- Tabbed groups are one tile that Hyprland moves as a whole (verified: moving one member
+-- to another workspace takes every member along), so a group must be one unit for tags:
+-- every member carries the same membership, and reconcile moves a group once.
+local function group_members(w)
+  local ok, members = pcall(function()
+    local g = w.group
+    if not g then return nil end
+    local m = g.members
+    if type(m) ~= "table" or #m == 0 then return nil end
+    return m
+  end)
+  if ok and members then return members end
+  return { w }
+end
+
+-- Stable identity for a group: its lowest member address.
+local function group_key(w)
+  local best
+  for _, m in ipairs(group_members(w)) do
+    local a = tostring(m.address)
+    if not best or a < best then best = a end
+  end
+  return best or tostring(w.address)
+end
+
+-- Union of the membership sets across a window's group.
+local function group_tags(w)
+  local u = {}
+  for _, m in ipairs(group_members(w)) do
+    for k in pairs((read_tags(m))) do u[k] = true end
+  end
+  return u
+end
+
 -- ---------------------------------------------------------------------------------------
 -- Monitors and workspace pairs
 -- ---------------------------------------------------------------------------------------
@@ -758,18 +792,25 @@ reconcile = function(monname, opts, depth)
     if opts.old_view then snapshot_ranks(monname, opts.old_view) end
 
     local hide, show = {}, {}
+    local seen_group = {}
     for _, w in ipairs(managed_windows(monname)) do
-      local members, pos = read_tags(w)
-      local should = intersects(members, V)
-      local id = ws_id(w)
-      if not should and id == p.vis then
-        hide[#hide + 1] = w
-      elseif should and id == p.hid then
-        local mk = nil
-        for k in pairs(members) do
-          if V[k] and (not mk or k < mk) then mk = k end
+      -- one decision per group: Hyprland moves all members together
+      local gk = w.group and group_key(w) or nil
+      if not gk or not seen_group[gk] then
+        if gk then seen_group[gk] = true end
+        local members = gk and group_tags(w) or (read_tags(w))
+        local _, pos = read_tags(w)
+        local should = intersects(members, V)
+        local id = ws_id(w)
+        if not should and id == p.vis then
+          hide[#hide + 1] = w
+        elseif should and id == p.hid then
+          local mk = nil
+          for k in pairs(members) do
+            if V[k] and (not mk or k < mk) then mk = k end
+          end
+          show[#show + 1] = { w = w, k = mk or 1e9, r = (mk and pos[mk]) or 1e9 }
         end
-        show[#show + 1] = { w = w, k = mk or 1e9, r = (mk and pos[mk]) or 1e9 }
       end
     end
 
@@ -900,6 +941,13 @@ end
 
 -- Focused window as the target of a tag operation. Scratchpad (special) windows are
 -- allowed: tagging one pulls it out into the pair. Pinned windows are sticky, skip them.
+-- Apply a membership set to a window and every other member of its group.
+local function assign_tags_group(w, members, monname)
+  for _, m in ipairs(group_members(w)) do
+    assign_tags(m, members, monname)
+  end
+end
+
 local function target_window(w)
   if w then return w end
   local aw = hl.get_active_window()
@@ -990,7 +1038,7 @@ function M.tag(tags, w, monname)
   local s = type(tags) == "table" and set_of(tags) or { [tonumber(tags)] = true }
   if set_empty(s) then return end
   monname = monname_of(w) or resolve_mon(monname)
-  assign_tags(w, s, monname)
+  assign_tags_group(w, s, monname)
   local prefer = pull_from_special(w, monname) or next_focus_after(w)
   if monname then reconcile(monname, { prefer = prefer }) end
 end
@@ -999,7 +1047,7 @@ function M.toggletag(k, w, monname)
   w = target_window(w)
   if not w then return end
   k = tonumber(k)
-  local members = read_tags(w)
+  local members = group_tags(w)
   if members[k] then
     members[k] = nil
     if set_empty(members) then return end -- refuse to strip the last tag
@@ -1007,7 +1055,7 @@ function M.toggletag(k, w, monname)
     members[k] = true
   end
   monname = monname_of(w) or resolve_mon(monname)
-  assign_tags(w, members, monname)
+  assign_tags_group(w, members, monname)
   local prefer = pull_from_special(w, monname) or next_focus_after(w)
   if monname then reconcile(monname, { prefer = prefer }) end
 end
@@ -1060,8 +1108,7 @@ function M.shiftboth(dir)
   local monname = aw and monname_of(aw) or resolve_mon(nil)
   if not monname then return end
   if aw and is_managed(aw) then
-    local members = read_tags(aw)
-    assign_tags(aw, shift_set(members, dir), monname)
+    assign_tags_group(aw, shift_set(group_tags(aw), dir), monname)
   end
   set_view(monname, shift_set(view[monname], dir), { prefer = aw and aw.address })
 end
@@ -1083,7 +1130,7 @@ function M.tagmon(dir)
   for i, m in ipairs(ms) do if m.name == src then idx = i end end
   local target = ms[((idx - 1 + dir) % #ms) + 1].name
   local p = ensure_pair(target)
-  assign_tags(aw, set_copy(view[target]), target)
+  assign_tags_group(aw, set_copy(view[target]), target)
   dispatch(hl.dsp.window.move({ workspace = p.vis, follow = false, window = wsel(aw) }))
   if src then reconcile(src, {}) end
   reconcile(target, { focus = false })
@@ -1281,9 +1328,28 @@ end
 local function adopt_strays()
   if busy then return end
   local touched = {}
+  local seen_group = {}
   for _, w in ipairs(hl.get_windows()) do
     local mn = adopt(w, nil)
     if mn then touched[mn] = true end
+    -- a group joined by hand may hold members with different tags: give every member
+    -- the union, so the group is a unit from then on
+    if w.mapped and w.group and not is_special(w) then
+      local gk = group_key(w)
+      if not seen_group[gk] then
+        seen_group[gk] = true
+        local u = group_tags(w)
+        if not set_empty(u) then
+          for _, m in ipairs(group_members(w)) do
+            if not set_eq((read_tags(m)), u) then
+              assign_tags(m, u, monname_of(m))
+              local mm = monname_of(m)
+              if mm then touched[mm] = true end
+            end
+          end
+        end
+      end
+    end
   end
   for mn in pairs(touched) do reconcile(mn, { focus = false }) end
 end

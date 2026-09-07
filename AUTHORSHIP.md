@@ -96,7 +96,9 @@ workspaces, scratchpad round trip, view survival across `hyprctl reload`, digit 
 modifier release, focus memory, stray adoption, F-key tags, SUPER+0 toggle, the default
 browser and mail keys revealing hidden windows, the finder's listing, per-tag layouts
 (seeding from Omarchy's files, switching, cycling, combined views taking the lowest tag's
-layout), the layout keys (set, toggle back, rotate, mirror, gaps).
+layout), the layout keys (set, toggle back, rotate, mirror, gaps), floating windows keeping
+their geometry through park and return, monocle parking sizes, tabbed groups moving as one
+unit and taking the union of their members' tags when formed by hand.
 
 Not tested: anything with a second monitor (pair 201/202, `tagmon`, monitor removal, the
 move-workspace-to-monitor bounce), the shipped Omarchy-flavoured keys module loaded live,
