@@ -33,7 +33,8 @@ omarchy plugin add https://github.com/Person1873/hypr-dwm-land.git --enable
 ~/.config/omarchy/plugins/person1873.hypr-dwm-land/install.sh
 ```
 
-Then, with the default keys:
+Then, with the default key map (Omarchy's own chords; the dwm map below differs, notably
+`SUPER + TAB`):
 
 | press | to |
 |---|---|
