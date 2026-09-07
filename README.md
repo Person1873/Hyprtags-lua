@@ -1,115 +1,131 @@
 # Hyprtags
 
-DWM-style tags for Hyprland on Omarchy, written entirely in Hyprland's Lua config
-(`require`-able module, no compiled plugin) plus a Quickshell bar widget for the Omarchy shell.
+Tags instead of workspaces for Hyprland on Omarchy, the way dwm does it. A Lua module for
+Hyprland's config plus a bar widget for the Omarchy shell. No compiled code.
+
+![the bar widget showing tags 1, 2 and 4](preview.png)
 
 Tested on Omarchy 4.0.2, Hyprland 0.56.2 (Lua 5.5), Quickshell 0.3.1. Built with an AI
 assistant; [AUTHORSHIP.md](AUTHORSHIP.md) says which decisions were human, which code was
 generated, and what has and has not been tested.
 
-## How it works
+## What tags are, in one minute
 
-- **Workspace pairs.** Each monitor gets two real workspaces: a *visible* one (the only one
-  ever focused) and a *hidden* parking lot. eDP-1 uses 101/102, the next monitor 201/202, and
-  so on; the slot is remembered per monitor name in `~/.local/state/hyprtags/state.lua`.
-  Workspaces 1..99 stay free for Omarchy window rules; `special:scratchpad` is untouched.
-- **Membership in Hyprland's own window tags.** A window on tags 3 and 5 carries `WMT3` and
-  `WMT5`. These are exact names, so Hyprland window rules and `hl.get_windows({ tag = "WMT3" })`
-  match them (Hyprland's tag matching is exact `std::set` lookup, no prefix or regex).
-- **Stack position in one more tag**, `WMT_POS{3:1,5:2}` = rank 1 in tag 3, rank 2 in tag 5.
-  Ranks are snapshotted from on-screen geometry when a window is *hidden*, for the tags that
-  were in the view being left. Re-viewing a tag re-inserts its windows lowest rank first, so
-  a stack comes back arranged as you left it. Tags not in the view are never touched, so what
-  you do on tag 3 cannot rearrange tag 5.
-- **The view** is a set of tags per monitor. `reconcile()` moves windows between the pair
-  with `hl.dsp.window.move({ follow = false, window = … })` so nothing else changes.
-- **Where a new window lands.** Without a rule, it goes on the tags you are viewing at the
-  moment it opens, as in dwm. If an Omarchy window rule assigns it a workspace, e.g.
-  `o.window("qemu", { workspace = "5" })`, it goes on tag 5 instead, whether or not tag 5 is
-  in view: on screen if it is, parked on tag 5 if not. Workspace 5 itself never persists.
-- **Nothing stays untagged.** Any mapped window outside the scratchpad that carries no tag is
-  given tag 1 (`stray_tag`) and moved into the pair, checked after every change and on a 2 s
-  sweep, so a window can never sit on a workspace the keys cannot reach.
-- **Per-tag layouts** (dwm PERTAG). The visible workspace's layout is remembered per tag and
-  re-applied on every view change, with the same `hl.workspace_rule` call Omarchy's own
-  toggle uses. A combined view uses its lowest tag's slot; the all-tags view has a slot of
-  its own. `hyprtags.cycle_layout(±1)` walks `cfg.layouts` (dwindle, master, centre master,
-  monocle, scrolling by default), `hyprtags.set_layout("master", { orientation = "center" })`
-  sets one directly, `toggle_layout()` flips to the slot's previous layout,
-  `rotate_layout_axis(±1)` and `mirror_layout()` turn a master layout, `toggle_gaps()` zeroes
-  and restores the gaps. Existing Omarchy `workspace-layouts/<n>.lua` files seed tag *n* once.
-- **Focus comes back where you left it.** The focused window is remembered per view (per
-  monitor) and refocused when that view returns, dwm/pertag style.
-- **Self-protecting.** Every keybind is registered per chord, so one failing bind cannot take
-  the keyboard with it; failures are listed by `debug()`. A pair workspace dragged to another
-  monitor is sent home once per second, and the feature disables itself if the move does not
-  take (untested on real hardware, see below). Error toasts are rate-limited.
-- **The bar** gets one socket2 line per monitor on every change
-  (`custom>>hyprtags>>eDP-1|v=2,3|o=1:2,2:1|u=|f=2`: viewed, occupied with counts, urgent,
-  focused-window tags) and talks back with `hyprctl eval 'hyprtags.view(3, "eDP-1")'`.
+With workspaces, every window lives on exactly one workspace and you look at one workspace
+at a time.
 
-Everything the compositor needs survives a config reload (tags and placement are compositor
-state); the module rebuilds its view from the state file and checks it against where windows
-actually sit.
+With tags, every window carries a **set** of tags (think labels: 1, 2, 3 …) and what you look
+at is also a set, called the **view**. A window is on screen when its tags and the view
+overlap. So:
 
-## Install
+- Put a browser on tag 2 and a terminal on tag 3, then view tag 2: you see the browser.
+- View tags 2 and 3 together: you see both, side by side in the layout.
+- Give one window tags 1 *and* 3: it appears whenever you view 1 or 3.
+- Press "view all": everything is on screen.
 
-The repo is an Omarchy shell plugin (manifest at the root) that also carries the Hyprland Lua
-module, so Omarchy's plugin installer brings everything in:
+Empty tags do not exist as places; a tag is just a label some windows carry. The bar shows
+only the tags that have windows, plus whatever you are viewing.
+
+## Quick start
 
 ```sh
 omarchy plugin add https://github.com/Person1873/Hyprtags-lua.git --enable
 ~/.config/omarchy/plugins/person1873.hyprtags/install.sh
 ```
 
-`install.sh` swaps `omarchy.workspaces` for the tags widget in `~/.config/omarchy/shell.json`,
-appends the loader to `~/.config/hypr/hyprland.lua`, reloads Hyprland and restarts the shell.
-Each config edit is backed up as `*.bak.<timestamp>` and made only once. Updates are
-`omarchy plugin update person1873.hyprtags`, then `hyprctl reload` and `omarchy restart shell`.
+Then, with the default keys:
 
-From a development checkout elsewhere (`~/Hyprtags-lua`), `./install.sh` copies the tree into
-the plugin folder instead (Omarchy refuses symlinked plugin folders); re-run it after edits.
+| press | to |
+|---|---|
+| `SUPER + 2` | view tag 2 |
+| `SUPER + SHIFT + 3` | put the focused window on tag 3 and go there |
+| `SUPER + CTRL + 3` | add tag 3 to what you are viewing |
+| `SUPER + CTRL + SHIFT + 3` | also give the focused window tag 3 |
+| `SUPER + TAB` | next tag that has windows |
 
-The loader it writes is:
+The full maps are under [Keys](#keys). `install.sh` explains what it changes under
+[What install.sh touches](#what-installsh-touches), and `uninstall.sh` reverses it.
 
-```lua
-package.path = "<plugin dir>/?.lua;<plugin dir>/?/init.lua;" .. package.path
-require("hyprtags").setup({})
-```
+## How it works
 
-It must run after Omarchy's defaults and your own `hypr/bindings.lua`, because the keys
-module unbinds the Omarchy chords it replaces and every bind on a key fires.
+Hyprland has no tags, so the module builds them from things Hyprland does have.
 
-`setup()` options: `keys` (Lua module name that binds the keys; default `"hyprtags.keys"`,
-`false` = bind nothing), `ntags` (default 21), `stray_tag` (default 1), `stray_sweep` ms
-(default 2000, 0 = only on changes), `combo_timeout` ms, `emit_delay` ms.
+**Two workspaces per monitor.** One is *visible* and is the only workspace ever focused.
+The other is a *parking lot* for windows that are not in the current view. Switching the
+view means moving windows between the two, silently, so nothing else changes. The visible
+workspace is 101 on the first monitor, 201 on the second, and so on; the parking lots are
+102, 202 … Ordinary workspaces 1..99 are left alone.
+
+**Tags are Hyprland window tags.** Hyprland lets any window carry named tags. A window on
+tags 3 and 5 carries `WMT3` and `WMT5`. Because these are plain names, Hyprland's own window
+rules can match them (`match = { tag = "WMT9" }`), and so can `hl.get_windows({ tag = … })`.
+
+**Position is remembered too.** When windows leave the screen Hyprland forgets where they
+sat in the layout. So each window also carries `WMT_POS{3:1,5:2}`: rank 1 among tag 3's
+windows, rank 2 among tag 5's. Ranks are taken from on-screen geometry at the moment a window
+is hidden, only for the tags being left. When a tag comes back its windows are re-inserted
+lowest rank first, so the stack comes back as you left it. Rearranging tag 3 never touches
+tag 5's ranks.
+
+**Layouts follow tags.** Each tag remembers its layout (dwindle, master, centre master,
+monocle, scrolling) and it is applied when that tag is viewed. A view of several tags uses
+the lowest tag's layout; the all-tags view has its own.
+
+**Focus follows tags.** The focused window is remembered per view and refocused when the
+view returns.
+
+**Where a new window lands.** Without a rule, on the tags you are viewing when it opens. If
+an Omarchy window rule assigns it a workspace, say `o.window("qemu", { workspace = "5" })`,
+it goes on tag 5 instead: on screen if 5 is in view, otherwise parked.
+
+**Nothing stays untagged.** Any window outside the scratchpad with no tag is given tag 1
+and moved into the pair, on every change and on a 2 s sweep, so a window can never sit on a
+workspace the keys cannot reach.
+
+**The scratchpad is untouched.** Omarchy's `special:scratchpad` keeps working exactly as
+shipped (`SUPER + S` show/hide, `SUPER + ALT + S` send). Windows there keep their tags but are
+not counted on the bar. To bring one back, focus it in the shown scratchpad and press any
+tag key: it lands on screen if that tag is viewed, otherwise parked on that tag.
+
+**The bar** gets one line per monitor over Hyprland's event socket whenever anything
+changes, and talks back with `hyprctl eval`. Left click views a tag, right click adds it to
+the view, **Ctrl** + left puts the focused window on it, **Ctrl** + right toggles the window's
+membership. (SUPER + mouse never reaches the bar; Omarchy binds it globally for drag and
+resize.) The tag holding the focused window shows a glyph; urgent tags use the bar's urgent
+colour.
+
+Everything a Hyprland config reload would forget is either compositor state (tags, window
+placement) or in a small state file the module re-reads and checks against reality.
 
 ## Keys
 
-The engine binds nothing itself. A **keys module** does, using the public `hyprtags.*`
-functions plus `hyprtags.rebind(keys, fn, desc)` (unbind the chord, bind ours, report
-failures) and `hyprtags.unbind(keys)`. Two maps ship:
+The module binds nothing by itself. A **keys module**, a Lua file, does the binding, using
+the module's public functions. Two maps ship. Change the map with
+`require("hyprtags").setup({ keys = "<module name>" })`; `keys = false` binds nothing.
 
-**`hyprtags/keys.lua` (default)** keeps Omarchy's own chords and points them at tags.
+### Default map (`hyprtags/keys.lua`): Omarchy's chords, pointed at tags
+
 *n* is a digit `1`..`9`; `0` is tag 10.
 
-| keys | action | Omarchy meaning |
+| keys | action | what Omarchy used it for |
 |---|---|---|
 | `SUPER +` *n* | view tag *n* | switch workspace |
 | `SUPER + SHIFT +` *n* | tag *n* and follow | move window to workspace |
 | `SUPER + SHIFT + ALT +` *n* | tag *n*, stay | move silently |
 | `SUPER + CTRL +` *n* | toggle tag *n* in the view | (free) |
 | `SUPER + CTRL + SHIFT +` *n* | toggle tag *n* on the window | (free) |
-| `SUPER + TAB` / `SHIFT + TAB` | next / previous occupied tag | next / previous workspace |
+| `SUPER + TAB` / `SHIFT + TAB` | next / previous tag with windows | next / previous workspace |
 | `SUPER + CTRL + TAB` | previous view | former workspace |
-| `SUPER + mouse wheel` | next / previous occupied tag | scroll workspaces |
+| `SUPER + mouse wheel` | next / previous tag with windows | scroll workspaces |
 
-**`examples/keys-dwm.lua`** is the author's own dwm map, carried over from a personal
-dwm-flexipatch build; it is not what dwm or flexipatch ship, and some of it is muscle memory
-rather than good design. Copy it to
-`~/.config/hypr/hyprtags-keys.lua`, edit freely, and load it with
-`require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })`. *n* is a digit `1`..`9` for
-tags 1..9, or `F1`..`F12` for tags 10..21.
+### dwm map (`examples/keys-dwm.lua`)
+
+This is the author's own map, carried over from a personal dwm-flexipatch build. It is not
+what dwm or flexipatch ship, and some of it is muscle memory rather than good design. Copy it
+to `~/.config/hypr/hyprtags-keys.lua`, edit freely, and load it with
+`require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })`.
+
+*n* is a digit `1`..`9` for tags 1..9, or `F1`..`F12` for tags 10..21.
 
 | keys | action |
 |---|---|
@@ -120,106 +136,132 @@ tags 1..9, or `F1`..`F12` for tags 10..21.
 | `SUPER + 0` / `SUPER + SHIFT + 0` | view all (again: back to the previous view) / tag with all |
 | `SUPER + TAB` | previous view (back and forth) |
 | `SUPER + U` | focus the urgent window (reveals its tag) |
-| `SUPER + O` | view the focused window's tags (Pop window out moves to `SUPER + ALT + O`) |
+| `SUPER + O` | view the focused window's tags (Omarchy's "pop window out" moves to `SUPER + ALT + O`) |
 | `SUPER + SHIFT + S` | sticky (pin) |
 | `SUPER + CTRL + LEFT/RIGHT` | shift window and view to the previous/next tag |
 | `SUPER + SHIFT + , / .` | send window to the previous/next monitor (takes that monitor's view) |
-| `SUPER + SHIFT + T / M / C` | layout for this tag: master (dwm tile) / monocle / scrolling (dwm columns) |
-| `SUPER + SHIFT + SPACE` | previous layout for this tag (dwm `setlayout` toggle) |
+| `SUPER + SHIFT + T / M / C` | this tag's layout: master (dwm tile) / monocle / scrolling (dwm columns) |
+| `SUPER + SHIFT + SPACE` | this tag's previous layout |
 | `SUPER + CTRL + T`, `SUPER + CTRL + RETURN` | rotate the master orientation / mirror master and stack |
 | `SUPER + CTRL + J / K` | roll the master stack forward / backward |
 | `SUPER + ALT + 0` | toggle gaps |
 
-Public functions for your own map: `view(tags, mon?)`, `toggleview(k)`, `tag(tags, w?)`,
-`toggletag(k, w?)`, `view_all()`, `tag_all()`, `view_previous()`, `view_next(±1)`,
-`comboview(k)`, `combotag(k)`, `combo_enable("SUPER")`, `focusurgent()`, `winview()`,
-`sticky()`, `shiftboth(±1)`, `shiftview(±1)`, `tagmon(±1)`, `cycle_layout(±1)`,
-`set_layout(name, opts)`, `toggle_layout()`, `rotate_layout_axis(±1)`, `mirror_layout()`,
-`toggle_gaps()`.
-
-Bar widget: left click = view, right click = toggle into view, **Ctrl** + left = tag the
-focused window, **Ctrl** + right = toggle the tag on it. (SUPER + mouse is consumed by
-Omarchy's global drag/resize binds and never reaches the bar.) Empty tags are hidden; viewed
-tags always show; the tag holding the focused window shows a glyph; urgent tags use the bar's
-urgent colour.
-
-Scratchpad: Omarchy's `SUPER + ALT + S` sends the focused window to the scratchpad (it keeps
-its tags) and `SUPER + S` shows or hides the scratchpad. To bring a window back, focus it in
-the shown scratchpad and press any tag key (`SUPER + SHIFT + 3`, or `SUPER + CTRL + SHIFT + 3`
-to keep its old tags too): it leaves the scratchpad and lands on screen if one of its tags is
-viewed, otherwise parked on that tag.
-
 Each keys file lists the Omarchy chords it displaces in its header comment.
 
-### dwm app/window layer (in `~/.config/hypr/bindings.lua`, not in the module)
+### Writing your own map
 
-Apps go through Omarchy's default-app selectors, never a hard-coded binary:
+Public functions on the global `hyprtags` table: `view(tags, mon?)`, `toggleview(k)`,
+`tag(tags, w?)`, `toggletag(k, w?)`, `view_all()`, `tag_all()`, `view_previous()`,
+`view_next(±1)`, `comboview(k)`, `combotag(k)`, `combo_enable("SUPER")`, `focusurgent()`,
+`winview()`, `sticky()`, `shiftboth(±1)`, `shiftview(±1)`, `tagmon(±1)`, `cycle_layout(±1)`,
+`set_layout(name, opts)`, `toggle_layout()`, `rotate_layout_axis(±1)`, `mirror_layout()`,
+`toggle_gaps()`, `emit()`, `relayout()`, `debug()`, `uninstall()`.
 
-| keys | action | displaced Omarchy chord |
-|---|---|---|
-| `SUPER + P` | apps menu (`omarchy-menu toggle apps`) | Pseudo window |
-| `SUPER + R` | Omarchy menu | — |
-| `SUPER + RETURN` | Herdr terminal (`omarchy-launch-terminal-herdr`) | plain terminal, dropped |
-| `SUPER + W` | focus the running default browser (any tag) or launch it; class read from the xdg default browser's desktop entry | Close window → `SUPER + X` |
-| `SUPER + ALT + W` | find window: `bin/hyprtags-windows`, every window with its tags in the Omarchy picker; focusing a hidden one reveals its tag | — |
-| `SUPER + X` | close window | Universal cut |
-| `SUPER + M` | mail (xdg `mailto` handler) | — |
-| `SUPER + SHIFT + RETURN` | swap with master (dwm zoom) | duplicate Browser (`SUPER + SHIFT + B` stays) |
-| `SUPER + SHIFT + I` / `D` | add / remove master | Docker TUI |
-| `SUPER + SHIFT + R` | reload Hyprland config | — |
+Binding helpers: `hyprtags.rebind(keys, fn, description)` unbinds whatever is on the chord
+and binds yours (every bind on a key fires, so this order matters); `hyprtags.bind` and
+`hyprtags.unbind` are the halves. A bind that fails is logged and reported once; it never
+takes the rest of the keyboard down.
 
 ## Using it from scripts
 
 Everything is on the global `hyprtags` table inside Hyprland's Lua state:
 
 ```sh
-hyprctl eval 'hyprtags.view(3)'              # optional second arg: monitor name
+hyprctl eval 'hyprtags.view(3)'              # optional second argument: monitor name
 hyprctl eval 'hyprtags.toggleview(4)'
-hyprctl eval 'hyprtags.tag({2, 5})'          # focused window; or pass an HL.Window second
-hyprctl eval 'hyprtags.toggletag(2)'
-hyprctl eval 'hyprtags.view_previous()'
+hyprctl eval 'hyprtags.tag({2, 5})'          # focused window
 hyprctl eval 'hyprtags.emit()'               # re-send the bar state
-hyprctl eval 'hyprtags.relayout()'           # snapshot ranks now, without hiding
 hyprctl eval 'hyprtags.debug()'              # writes ~/.local/state/hyprtags/debug.txt
-hyprctl eval 'hyprtags.uninstall()'          # strip tags, everything back on workspace 1
 ```
 
-`hyprctl eval` prints only `ok` or an error; read state with `hyprctl clients -j` (tags),
-`hyprctl workspaces -j`, or the debug file.
+`hyprctl eval` prints only `ok` or an error. Read state with `hyprctl clients -j` (the
+tags), `hyprctl workspaces -j`, or the debug file.
 
-## Verifying
+`bin/hyprtags-windows` is a lost-window finder: every window as `[tags] class · title` in
+the Omarchy picker; picking one focuses it, which reveals its tag. `--list` prints the lines
+instead. The dwm map's author binds it to `SUPER + ALT + W` in their own config.
+
+## Options
+
+`require("hyprtags").setup({ ... })` accepts:
+
+| option | default | meaning |
+|---|---|---|
+| `keys` | `"hyprtags.keys"` | keys module to load; `false` for none |
+| `ntags` | `21` | how many tags exist (9 digits + 12 F-keys) |
+| `stray_tag` | `1` | where an untagged window is put |
+| `stray_sweep` | `2000` | ms between sweeps for untagged windows; `0` = only on changes |
+| `layouts` | dwindle, master, centre master, monocle, scrolling | what `cycle_layout` walks |
+| `combo_timeout` | `1000` | ms fallback for ending a held-modifier combo |
+| `emit_delay` | `30` | ms debounce for bar updates |
+
+## What install.sh touches
+
+Nothing runs on plugin load. `install.sh` is an explicit action and does, once each, with a
+timestamped backup beside every file it edits:
+
+1. From a development checkout, copies the tree into
+   `~/.config/omarchy/plugins/person1873.hyprtags/` (Omarchy refuses symlinked plugin
+   folders). After `omarchy plugin add` the checkout already is that folder.
+2. In `~/.config/omarchy/shell.json`, replaces `omarchy.workspaces` with this widget in the
+   bar layout and registers the plugin.
+3. Appends one marked block to `~/.config/hypr/hyprland.lua`:
+
+   ```lua
+   -- BEGIN hyprtags (managed by person1873.hyprtags/install.sh; remove with uninstall.sh)
+   package.path = "<plugin dir>/?.lua;<plugin dir>/?/init.lua;" .. package.path
+   require("hyprtags").setup({})
+   -- END hyprtags
+   ```
+
+   It refuses if a marker is already present. Because this runs after Omarchy's defaults and
+   your own `hypr/bindings.lua`, the keys module's unbinds win.
+4. Runs `hyprctl reload`. If `hyprctl configerrors` reports anything, `hyprland.lua` is put
+   back to its exact prior bytes and the script exits non-zero. Then restarts the shell.
+
+Files the module writes at run time, all under `~/.local/state/hyprtags/`: `state`, a
+passive line-format file (per-monitor workspace slot, current and previous view, focused
+window per view, layout per tag) that is parsed with anchored patterns and never executed;
+and `debug.txt` on request. No network, no `sudo`, no daemons, no other files.
+
+Window tags themselves live in the compositor and vanish when Hyprland exits.
+
+## Removing
 
 ```sh
-hyprctl workspaces -j | jq '.[]|{id,name,monitor,windows}'      # 101/102 on eDP-1
+~/.config/omarchy/plugins/person1873.hyprtags/uninstall.sh   # config edits reversed
+omarchy plugin remove person1873.hyprtags                    # the plugin folder
+```
+
+`uninstall.sh` removes only the marked block from `hyprland.lua` (and refuses if the
+markers are missing, duplicated or out of order), puts `omarchy.workspaces` back in
+`shell.json`, then reloads Hyprland and restarts the shell. Backups are made first.
+
+What survives: `~/.local/state/hyprtags/` (add `--purge-state` to delete it), the
+`*.bak.<timestamp>` backups, and the tags on currently open windows until Hyprland restarts
+(add `--reset-windows` to strip them and move every window to workspace 1 first). Nothing
+else is left behind.
+
+## Verifying an install
+
+```sh
+hyprctl workspaces -j | jq '.[]|{id,name,monitor,windows}'      # 101/102 on your monitor
 hyprctl clients -j | jq '.[]|{class,ws:.workspace.id,tags}'      # WMT<n> + WMT_POS{..} per window
 socat -u UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock - | grep custom
-hyprctl binds -j | jq -r '.[]|select(.description|test("tag";"i"))|.description' | sort | uniq -d   # empty
 ```
 
-Exercised on 2026-09-08: adoption of new windows, rank snapshot and restoration after a swap,
-bounce when the hidden workspace is focused, adoption from a numbered workspace, scratchpad
-round trip keeping tags, view survives `hyprctl reload`, digit combos with modifier release.
-Not yet exercised: a second monitor (pair 201/202, `tagmon`, Omarchy's
-`SUPER + SHIFT + ALT + arrows` workspace move being bounced back).
-
-## Uninstall
-
-```sh
-hyprctl eval 'hyprtags.uninstall()'
-```
-then remove the loader lines from `~/.config/hypr/hyprland.lua`, restore the `shell.json`
-backup (or put `omarchy.workspaces` back), delete
-`~/.config/omarchy/plugins/person1873.hyprtags`, and `omarchy restart shell`.
+What has been exercised, and what has not, is listed in [AUTHORSHIP.md](AUTHORSHIP.md).
+Anything involving a second monitor is still untested.
 
 ## Prior art and credit
 
-The model is [dwm](https://dwm.suckless.org/) by the suckless team: tags as a set per window,
-`view` / `toggleview` / `tag` / `toggletag`, the back-and-forth on `view(0)`, `zoom`. Several
-behaviours here are re-implementations of dwm patches from their descriptions: pertag
-(per-tag layout), combo (hold the modifier, press several tags), hidevacanttags, winview,
-shiftboth, focusurgent, and sendmon/tagmon. The author's key map comes from a
-[dwm-flexipatch](https://github.com/bakkeby/dwm-flexipatch) build. The code was written by
-an AI assistant that has dwm's source and its patches in its training data and drew on that
+The model is [dwm](https://dwm.suckless.org/) by the suckless team: tags as a set per
+window, `view` / `toggleview` / `tag` / `toggletag`, the back-and-forth on `view(0)`, `zoom`.
+Several behaviours here mirror dwm patches: pertag (per-tag layout), combo (hold the
+modifier, press several tags), hidevacanttags, winview, shiftboth, focusurgent, and
+sendmon/tagmon. The author's key map comes from a
+[dwm-flexipatch](https://github.com/bakkeby/dwm-flexipatch) build. The code was written by an
+AI assistant that has dwm's source and its patches in its training data and drew on that
 memory for behaviour (for example pertag's rule that a combined view uses its lowest tag's
 slot). No dwm or flexipatch source is reproduced or structurally translated here: the data
 model is Hyprland's (window tags, windows moved between two workspaces) rather than dwm's
@@ -229,7 +271,7 @@ are welcome to compare. dwm is MIT/X Consortium licensed.
 Built on [Hyprland](https://hyprland.org/) 0.56's Lua config and the
 [Omarchy](https://omarchy.org/) shell plugin system.
 
-## Layout
+## Layout of this repo
 
 ```
 manifest.json                   Omarchy plugin manifest (id person1873.hyprtags, bar-widget)
@@ -238,5 +280,5 @@ hyprtags/init.lua               the engine (no keybinds)
 hyprtags/keys.lua               default keys: Omarchy's chords on tags
 examples/keys-dwm.lua           the author's dwm-style keys, for ~/.config/hypr/hyprtags-keys.lua
 bin/hyprtags-windows            lost-window finder on omarchy-menu-select (--list to print)
-install.sh                      idempotent installer
+install.sh / uninstall.sh       the config edits, and their exact reversal
 ```

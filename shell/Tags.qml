@@ -29,7 +29,8 @@ BarWidget {
     var win = root.QsWindow ? root.QsWindow.window : null
     var screen = win ? win.screen : null
     var mon = screen ? Hyprland.monitorFor(screen) : null
-    if (mon && mon.name) monitorName = String(mon.name)
+    var name = mon && mon.name ? String(mon.name) : ""
+    if (/^[A-Za-z0-9._-]{1,64}$/.test(name)) monitorName = name
     return monitorName !== ""
   }
 
@@ -41,12 +42,17 @@ BarWidget {
       var p = parts[i]
       if (p === "") continue
       var kv = p.split(":")
-      out[Number(kv[0])] = kv.length > 1 ? Number(kv[1]) : true
+      var k = Number(kv[0])
+      if (!Number.isInteger(k) || k < 1 || k > 999) continue
+      var v = kv.length > 1 ? Number(kv[1]) : true
+      out[k] = (v === true || Number.isInteger(v)) ? v : true
     }
     return out
   }
 
   function apply(line) {
+    // socket2 lines are compositor-emitted, but bound them anyway: 4 KiB, ASCII only.
+    if (line.length > 4096 || !/^[\x20-\x7e]*$/.test(line)) return
     var fields = line.split("|")
     if (fields.length < 1) return
     var mon = fields[0]
@@ -77,7 +83,7 @@ BarWidget {
 
   function call(expr) {
     if (!root.bar) return
-    root.bar.run("hyprctl eval " + Util.shellQuote(expr))
+    root.bar.run("/usr/bin/hyprctl eval " + Util.shellQuote(expr))
   }
 
   function request() {
@@ -85,12 +91,12 @@ BarWidget {
     call("hyprtags.emit()")
   }
 
-  // Monitor name as a Lua string literal. Names come from the compositor, but never
-  // splice text into code unescaped.
+  // Monitor name as a Lua string literal. Names come from the compositor, but the string
+  // reaches `hyprctl eval`, so it is accepted only from a closed grammar (connector-style
+  // names) and dropped otherwise: the engine then falls back to the focused monitor.
   function monArg() {
-    if (monitorName === "") return ""
-    var esc = monitorName.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
-    return ", \"" + esc + "\""
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(monitorName)) return ""
+    return ", \"" + monitorName + "\""
   }
 
   Connections {

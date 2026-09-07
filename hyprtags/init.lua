@@ -12,7 +12,7 @@
 --
 -- Everything the compositor needs to survive a config reload (tags, workspace placement)
 -- is compositor state; the small remainder (slot per monitor, current/previous view) is
--- in ~/.local/state/hyprtags/state.lua.
+-- in ~/.local/state/hyprtags/state (a passive line format, parsed, never executed).
 --
 -- Public surface (also reachable via `hyprctl eval 'hyprtags.view(3)'`): see the `M.*`
 -- functions near the bottom.
@@ -316,81 +316,132 @@ end
 -- Persistent state
 -- ---------------------------------------------------------------------------------------
 
-local function serialize_set(s)
-  local parts = {}
-  for _, k in ipairs(sorted_keys(s)) do parts[#parts + 1] = "[" .. k .. "]=true" end
-  return "{" .. table.concat(parts, ",") .. "}"
+-- State file format (hyprtags/state, one record per line, parsed with anchored patterns,
+-- never executed as code):
+--   slot   <monitor> <n>
+--   view   <monitor> <tags>            tags = comma-separated integers
+--   prev   <monitor> <tags>
+--   focus  <monitor> <viewkey> <0xaddr>
+--   layout <monitor> <slot> <layout> [orientation=<name>]
+-- Monitor names are restricted to [A-Za-z0-9._-]; anything else is not persisted.
+local STATE_MAX_BYTES = 64 * 1024
+local STATE_MAX_LINES = 2000
+
+local function safe_name(name)
+  return type(name) == "string" and #name <= 64 and name:match("^[A-Za-z0-9._%-]+$") ~= nil
 end
 
-local function q(s)
-  return string.format("%q", s)
+local function tags_to_string(set)
+  return table.concat(sorted_keys(set), ",")
+end
+
+local function parse_tag_list(str)
+  local out = {}
+  if not str or str == "" then return out end
+  for n in str:gmatch("(%d+)") do
+    local k = tonumber(n)
+    if k and k >= 1 and k <= 999 then out[k] = true end
+  end
+  return out
 end
 
 save_state = function()
-  local lines = { "return {", "  slots = {" }
+  local lines = {}
   for _, name in ipairs(sorted_keys(slots)) do
-    lines[#lines + 1] = string.format("    [%s] = %d,", q(name), slots[name])
+    if safe_name(name) then lines[#lines + 1] = string.format("slot %s %d", name, slots[name]) end
   end
-  lines[#lines + 1] = "  },"
-  lines[#lines + 1] = "  view = {"
   for _, name in ipairs(sorted_keys(view)) do
-    lines[#lines + 1] = string.format("    [%s] = %s,", q(name), serialize_set(view[name]))
+    if safe_name(name) then lines[#lines + 1] = string.format("view %s %s", name, tags_to_string(view[name])) end
   end
-  lines[#lines + 1] = "  },"
-  lines[#lines + 1] = "  prev = {"
   for _, name in ipairs(sorted_keys(prev)) do
-    if prev[name] then
-      lines[#lines + 1] = string.format("    [%s] = %s,", q(name), serialize_set(prev[name]))
+    if safe_name(name) and prev[name] then
+      lines[#lines + 1] = string.format("prev %s %s", name, tags_to_string(prev[name]))
     end
   end
-  lines[#lines + 1] = "  },"
-  lines[#lines + 1] = "  focus = {"
   for _, name in ipairs(sorted_keys(lastfocus)) do
-    local parts = {}
-    for _, key in ipairs(sorted_keys(lastfocus[name])) do
-      parts[#parts + 1] = string.format("[%s]=%s", q(key), q(lastfocus[name][key]))
-    end
-    lines[#lines + 1] = string.format("    [%s] = {%s},", q(name), table.concat(parts, ","))
-  end
-  lines[#lines + 1] = "  },"
-  lines[#lines + 1] = "  layout = {"
-  for _, name in ipairs(sorted_keys(layouts)) do
-    local parts = {}
-    for _, key in ipairs(sorted_keys(layouts[name])) do
-      local L = layouts[name][key]
-      local opts = {}
-      for _, ok in ipairs(sorted_keys(L.opts or {})) do
-        opts[#opts + 1] = string.format("[%s]=%s", q(ok), q(tostring(L.opts[ok])))
+    if safe_name(name) then
+      for _, key in ipairs(sorted_keys(lastfocus[name])) do
+        local addr = tostring(lastfocus[name][key])
+        if key:match("^[%d,]+$") and addr:match("^0x[0-9a-f]+$") then
+          lines[#lines + 1] = string.format("focus %s %s %s", name, key, addr)
+        end
       end
-      parts[#parts + 1] = string.format("[%s]={layout=%s,opts={%s}}", q(key), q(L.layout), table.concat(opts, ","))
     end
-    lines[#lines + 1] = string.format("    [%s] = {%s},", q(name), table.concat(parts, ","))
   end
-  lines[#lines + 1] = "  },"
-  lines[#lines + 1] = "}"
+  for _, name in ipairs(sorted_keys(layouts)) do
+    if safe_name(name) then
+      for _, slot in ipairs(sorted_keys(layouts[name])) do
+        local L = layouts[name][slot]
+        if tostring(slot):match("^[%da-z]+$") and L.layout:match("^[a-z]+$") then
+          local o = L.opts and L.opts.orientation
+          lines[#lines + 1] = string.format("layout %s %s %s%s", name, slot, L.layout,
+            (o and tostring(o):match("^[a-z]+$")) and (" orientation=" .. o) or "")
+        end
+      end
+    end
+  end
   local body = table.concat(lines, "\n") .. "\n"
 
-  local path = cfg.state_dir .. "/state.lua"
-  local tmp = path .. ".tmp"
+  -- Exclusive-ish temporary with an unpredictable name in the destination directory, then
+  -- rename over the target (rename replaces a planted symlink instead of writing through
+  -- it). Lua has no O_EXCL, so this is same-user hardening, not a security boundary; the
+  -- file holds no secrets.
+  local path = cfg.state_dir .. "/state"
+  local tmp = string.format("%s/.state.%d.%d.tmp", cfg.state_dir, os.time(), math.random(1, 1e9))
   local f = io.open(tmp, "w")
   if not f then
-    -- first run: the directory is missing. One fork, once.
-    os.execute("mkdir -p '" .. cfg.state_dir:gsub("'", "'\\''") .. "'")
+    os.execute("mkdir -p -m 700 '" .. cfg.state_dir:gsub("'", "'\\''") .. "'")
     f = io.open(tmp, "w")
     if not f then log("cannot write %s", tmp) return end
   end
-  f:write(body)
+  local ok = f:write(body)
   f:close()
-  os.rename(tmp, path)
+  if not ok or not os.rename(tmp, path) then
+    os.remove(tmp)
+    log("state save failed")
+  end
 end
 
+-- Returns { slots, view, prev, focus, layout } from the state file, or empty tables.
+-- Bounded read, one anchored pattern per record type; unknown or malformed lines are
+-- ignored rather than repaired.
 local function load_state()
-  local path = cfg.state_dir .. "/state.lua"
-  local chunk = loadfile(path)
-  if not chunk then return {} end
-  local ok, data = pcall(chunk)
-  if not ok or type(data) ~= "table" then return {} end
-  return data
+  local st = { slots = {}, view = {}, prev = {}, focus = {}, layout = {} }
+  local f = io.open(cfg.state_dir .. "/state", "r")
+  if not f then return st end
+  local body = f:read(STATE_MAX_BYTES + 1)
+  f:close()
+  if not body or #body > STATE_MAX_BYTES then
+    log("state file missing or oversized; ignoring")
+    return st
+  end
+  local n = 0
+  for line in body:gmatch("[^\n]+") do
+    n = n + 1
+    if n > STATE_MAX_LINES then break end
+    local kind, rest = line:match("^(%a+) (.*)$")
+    if kind == "slot" then
+      local name, num = rest:match("^([A-Za-z0-9._%-]+) (%d+)$")
+      if name and tonumber(num) < 100 then st.slots[name] = tonumber(num) end
+    elseif kind == "view" or kind == "prev" then
+      local name, tags = rest:match("^([A-Za-z0-9._%-]+) ([%d,]+)$")
+      if name then st[kind][name] = parse_tag_list(tags) end
+    elseif kind == "focus" then
+      local name, key, addr = rest:match("^([A-Za-z0-9._%-]+) ([%d,]+) (0x[0-9a-f]+)$")
+      if name then
+        st.focus[name] = st.focus[name] or {}
+        st.focus[name][key] = addr
+      end
+    elseif kind == "layout" then
+      local name, slot, layout, orient = rest:match("^([A-Za-z0-9._%-]+) ([%da-z]+) ([a-z]+)%s*(.*)$")
+      if name then
+        local o = orient and orient:match("^orientation=([a-z]+)$") or nil
+        st.layout[name] = st.layout[name] or {}
+        st.layout[name][slot] = { layout = layout, opts = o and { orientation = o } or nil }
+      end
+    end
+  end
+  return st
 end
 
 -- ---------------------------------------------------------------------------------------
@@ -1019,7 +1070,9 @@ function M.set_layout(layout, opts, monname)
   layouts[monname][slot] = rec
   apply_layout(monname, rec)
   save_state()
-  hl.exec_cmd("omarchy-notification-send -g 󱂬 " .. string.format("%q", "Layout: " .. layout_label(rec)))
+  -- label comes from cfg.layouts (config, not data); still restrict to a safe charset
+  local label = tostring(layout_label(rec)):gsub("[^%w %-]", "")
+  hl.exec_cmd("/usr/bin/omarchy-notification-send -g 󱂬 'Layout: " .. label .. "'")
 end
 
 -- Walk cfg.layouts forwards or backwards from the current view's layout.
@@ -1132,6 +1185,7 @@ function M.debug()
   for _, l in ipairs(log_lines) do lines[#lines + 1] = "  " .. l end
   local f = io.open(cfg.state_dir .. "/debug.txt", "w")
   if f then f:write(table.concat(lines, "\n"), "\n") f:close() end
+  -- (same-user diagnostic file; contains window classes and addresses, no secrets)
   return table.concat(lines, "\n")
 end
 
@@ -1530,9 +1584,7 @@ local function init()
   for name, tbl in pairs(st.layout or {}) do
     layouts[name] = {}
     for key, rec in pairs(tbl) do
-      if type(rec) == "table" and rec.layout then
-        layouts[name][key] = { layout = rec.layout, opts = (rec.opts and next(rec.opts)) and rec.opts or nil }
-      end
+      if type(rec) == "table" and rec.layout then layouts[name][key] = rec end
     end
   end
   lastfocus = {}

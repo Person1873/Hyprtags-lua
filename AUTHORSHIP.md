@@ -48,6 +48,17 @@ can tell design intent from generated implementation, and what has actually been
   desktop entry.
 - The senior-dev style review of the code and the list of ordering hazards.
 
+## Marketplace hardening pass (2026-09-08)
+
+Prompted by the human asking whether the plugin had been submitted to the Omarchy plugin
+marketplace. The AI read the marketplace's submission guide, security baseline and the
+community review-pitfalls guide, then changed: the state file from executed Lua to a
+parsed, bounded line format; the widget to accept the monitor name only from a closed
+grammar; the window finder to strip markup and control characters from titles, bound the
+`hyprctl` output and validate addresses; `install.sh` to write one marked block with
+rollback and same-directory temporaries; a new `uninstall.sh` that removes only that block.
+The README was rewritten for readers who do not know dwm, at the human's request.
+
 ## What is borrowed
 
 The tag model, operation names and the behaviour of the pertag, combo, hidevacanttags,

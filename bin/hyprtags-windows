@@ -5,34 +5,58 @@
 #
 #   hyprtags-windows          open the picker
 #   hyprtags-windows --list   print the lines it would offer (for scripting / testing)
+#
+# Window classes and titles are untrusted (a web page sets document.title) and the menu
+# renders labels with a component this script cannot pin to plain text, so every label
+# is reduced to printable ASCII/UTF-8 without <, >, & or control characters and capped.
 set -euo pipefail
+umask 077
 
-lines=$(hyprctl clients -j | jq -r '
-  def tags: [.tags[] | select(test("^WMT[0-9]+$")) | sub("^WMT"; "")] | sort_by(tonumber) | join(",");
-  .[] | select(.mapped)
+HYPRCTL=/usr/bin/hyprctl
+JQ=/usr/bin/jq
+MAX_JSON=$((4 * 1024 * 1024))   # hyprctl clients -j is bounded before jq sees it
+MAX_LABEL=120
+
+clients=$("$HYPRCTL" clients -j 2>/dev/null | /usr/bin/head -c $((MAX_JSON + 1)))
+[[ -n $clients ]] || exit 0
+if (( ${#clients} > MAX_JSON )); then
+  echo "hyprtags-windows: window list too large" >&2
+  exit 1
+fi
+
+# "[tags]\tclass\ttitle\taddress" per window; class/title already stripped of markup and
+# control characters and truncated in jq.
+lines=$("$JQ" -r --argjson max "$MAX_LABEL" '
+  def clean: tostring | gsub("[<>&\\p{Cc}\\p{Cf}]"; "") | .[0:$max];
+  def tags: [.tags[]? | select(type=="string" and test("^WMT[0-9]{1,3}$")) | sub("^WMT"; "")]
+            | sort_by(tonumber) | join(",");
+  .[]? | select(.mapped == true and (.address|type) == "string" and (.address|test("^0x[0-9a-f]{1,16}$")))
   | (if .workspace.id < 0 then "S" elif (tags | length) > 0 then tags else "-" end) as $where
-  | "\($where)\t\(.class)\t\(.title)\t\(.address)"' | sort -t$'\t' -k1,1V -k2,2)
+  | "\($where)\t\(.class|clean)\t\(.title|clean)\t\(.address)"' <<<"$clients" 2>/dev/null \
+  | /usr/bin/head -n 500 | /usr/bin/sort -t$'\t' -k1,1V -k2,2)
 
 [[ -n $lines ]] || exit 0
 
 if [[ ${1:-} == "--list" ]]; then
-  printf '%s\n' "$lines" | awk -F'\t' '{printf "[%s]  %s  ·  %s\n", $1, $2, $3}'
+  printf '%s\n' "$lines" | /usr/bin/awk -F'\t' '{printf "[%s]  %s  ·  %s\n", $1, $2, $3}'
   exit 0
 fi
 
-# Present "[tags]  class  ·  title"; keep the address on the side to resolve the pick.
 declare -A addr_of
 options=()
 while IFS=$'\t' read -r where class title address; do
+  [[ $address =~ ^0x[0-9a-f]{1,16}$ ]] || continue
   label="[$where]  $class  ·  $title"
-  # duplicate labels (two identical terminals) still need distinct picks
   n=1; base=$label
   while [[ -n ${addr_of[$label]:-} ]]; do n=$((n + 1)); label="$base ($n)"; done
   addr_of[$label]=$address
   options+=("$label")
 done <<<"$lines"
+(( ${#options[@]} > 0 )) || exit 0
 
-choice=$(printf '%s\n' "${options[@]}" | omarchy-menu-select "Windows" -- --width 720 --maxheight 480) || exit 0
+choice=$(printf '%s\n' "${options[@]}" | /usr/bin/omarchy-menu-select "Windows" -- --width 720 --maxheight 480) || exit 0
 address=${addr_of[$choice]:-}
-[[ -n $address ]] || exit 0
-hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+[[ $address =~ ^0x[0-9a-f]{1,16}$ ]] || exit 0
+# The address is the only value that reaches the compositor, and it matched a closed
+# grammar above; it is passed as one argv element, not through a shell.
+"$HYPRCTL" dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
