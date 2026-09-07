@@ -18,7 +18,7 @@
     "allowMultiple": false,
     "defaultSection": "left",
     "defaults": {
-      "ntags": 9
+      "ntags": 21
     },
     "schema": [
       { "key": "ntags", "type": "number", "label": "Number of tags" }

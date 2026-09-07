@@ -28,10 +28,14 @@ local unpack = table.unpack or unpack
 -- ---------------------------------------------------------------------------------------
 
 local cfg = {
-  ntags = 9,
+  -- Tags 1..9 sit on the digit keys; with `fkeys` tags 10..21 sit on F1..F12 (dwm-style).
+  ntags = 21,
+  fkeys = true,
   state_dir = HOME .. "/.local/state/hyprtags",
   -- Digit keycodes: code:10 = "1" ... code:18 = "9", code:19 = "0".
   bind_keys = true,
+  stray_sweep = 2000,   -- ms: adopt untagged windows this often (0 = only on changes)
+  stray_tag = 1,        -- untagged windows outside the scratchpad land here
   unbind_omarchy = true,
   combo_timeout = 1000, -- ms: fallback for the modifier-release detection
   emit_delay = 30,      -- ms: debounce for bar events
@@ -560,7 +564,10 @@ local function emit_line(monname)
     table.concat(sorted_keys(urg), ","), table.concat(sorted_keys(foc), ","))
 end
 
+local adopt_strays_ref -- set once adopt_strays is defined (it lives further down)
+
 emit_all = function()
+  if adopt_strays_ref then adopt_strays_ref() end
   for _, m in ipairs(hl.get_monitors()) do
     local line = emit_line(m.name)
     if line then dispatch(hl.dsp.event(line)) end
@@ -839,45 +846,51 @@ end
 
 local function legacy_tag_for(wsid)
   if wsid >= 1 and wsid <= cfg.ntags then return wsid end
-  if wsid > cfg.ntags and wsid < 100 then return cfg.ntags end
   return nil
 end
 
--- Bring one window under management according to where it sits. Returns the monitor
--- name that needs a reconcile, or nil.
-local function adopt(w)
+-- Bring one window under management according to where it sits. `default_set` is what
+-- an untagged window on the pair gets (the current view for a freshly opened window,
+-- cfg.stray_tag for anything found lying around). Returns the monitor name that needs a
+-- reconcile, or nil.
+local function adopt(w, default_set)
   if not w.mapped or w.pinned or is_special(w) then return nil end
   if is_managed(w) then return nil end
   local id = ws_id(w)
   if not id then return nil end
   local monname = mon_of_ws[id]
   if monname then
-    local p = pairs_by_mon[monname]
-    local V = view[monname]
-    if id == p.vis then
-      assign_tags(w, set_copy(V), monname)
-    else
-      -- on the hidden workspace without tags: park it on the lowest tag not in view
-      local k = 1
-      while V[k] and k < cfg.ntags do k = k + 1 end
-      if V[k] then k = 1 end
-      assign_tags(w, { [k] = true }, monname)
-    end
+    local tags = default_set and set_copy(default_set) or { [cfg.stray_tag] = true }
+    if set_empty(tags) then tags = { [cfg.stray_tag] = true } end
+    assign_tags(w, tags, monname)
     return monname
   end
-  local k = legacy_tag_for(id)
-  if k then
-    local m = w.monitor
-    monname = m and m.name or active_monname()
-    if not monname then return nil end
-    local p = ensure_pair(monname)
-    assign_tags(w, { [k] = true }, monname)
-    local dest = view[monname][k] and p.vis or p.hid
-    dispatch(hl.dsp.window.move({ workspace = dest, follow = false, window = wsel(w) }))
-    return monname
-  end
-  return nil
+  local m = w.monitor
+  monname = m and m.name or active_monname()
+  if not monname then return nil end
+  local p = ensure_pair(monname)
+  -- a numbered workspace 1..ntags means "that tag"; anything else gets the stray tag
+  local k = legacy_tag_for(id) or cfg.stray_tag
+  assign_tags(w, { [k] = true }, monname)
+  local dest = view[monname][k] and p.vis or p.hid
+  dispatch(hl.dsp.window.move({ workspace = dest, follow = false, window = wsel(w) }))
+  return monname
 end
+
+-- Safety net: every mapped, unpinned window outside the scratchpad must carry a tag.
+-- Runs after every emit and on a timer, so a window that slipped past window.open (or was
+-- stripped by hand) can never stay stuck on a workspace the keys cannot reach.
+local function adopt_strays()
+  if busy then return end
+  local touched = {}
+  for _, w in ipairs(hl.get_windows()) do
+    local mn = adopt(w, nil)
+    if mn then touched[mn] = true end
+  end
+  for mn in pairs(touched) do reconcile(mn, { focus = false }) end
+end
+
+adopt_strays_ref = adopt_strays
 
 -- ---------------------------------------------------------------------------------------
 -- Keys
@@ -961,6 +974,15 @@ local function setup_keys()
     bind("SUPER + SHIFT + " .. key, function() combotag(k) end, "Tag window " .. k)
     bind("SUPER + CTRL + SHIFT + " .. key, function() M.toggletag(k) end, "Toggle window tag " .. k)
   end
+  if cfg.fkeys then
+    for k = 10, math.min(cfg.ntags, 21) do
+      local key = "F" .. tostring(k - 9)
+      bind("SUPER + " .. key, function() comboview(k) end, "View tag " .. k .. " (" .. key .. ")")
+      bind("SUPER + CTRL + " .. key, function() M.toggleview(k) end, "Toggle view of tag " .. k .. " (" .. key .. ")")
+      bind("SUPER + SHIFT + " .. key, function() combotag(k) end, "Tag window " .. k .. " (" .. key .. ")")
+      bind("SUPER + CTRL + SHIFT + " .. key, function() M.toggletag(k) end, "Toggle window tag " .. k .. " (" .. key .. ")")
+    end
+  end
   bind("SUPER + code:19", function() M.view_all() end, "View all tags")
   bind("SUPER + SHIFT + code:19", function() M.tag_all() end, "Tag window with all tags")
 
@@ -990,7 +1012,8 @@ end
 local function setup_events()
   hl.on("window.open", guard("window.open", function(w)
     if busy then return end
-    local monname = adopt(w)
+    local wm = monname_of(w)
+    local monname = adopt(w, wm and view[wm] or nil)
     if monname then reconcile(monname, {}) else schedule_emit() end
   end))
 
@@ -1035,7 +1058,7 @@ local function setup_events()
         end
       else
         later(1, function()
-          local mn = adopt(w)
+          local mn = adopt(w, view[monname])
           if mn then reconcile(mn, {}) end
         end)
       end
@@ -1084,7 +1107,7 @@ local function setup_events()
         local mn = m and m.name or active_monname()
         if not mn then return end
         ensure_pair(mn)
-        for _, w in ipairs(windows_on(id)) do adopt(w) end
+        for _, w in ipairs(windows_on(id)) do adopt(w, nil) end
         set_view(mn, { [k] = true })
         local p = pairs_by_mon[mn]
         dispatch(hl.dsp.focus({ workspace = p.vis }))
@@ -1097,7 +1120,7 @@ local function setup_events()
     local name = m.name
     later(50, function()
       local p = ensure_pair(name)
-      for _, w in ipairs(hl.get_windows({ monitor = name })) do adopt(w) end
+      for _, w in ipairs(hl.get_windows({ monitor = name })) do adopt(w, nil) end
       reconcile(name, {})
       local mm = monitor_by_name(name)
       if mm and mm.active_workspace and mm.active_workspace.id ~= p.vis then
@@ -1202,7 +1225,7 @@ local function init()
   end
 
   for _, m in ipairs(monitors) do
-    for _, w in ipairs(hl.get_windows({ monitor = m.name })) do adopt(w) end
+    for _, w in ipairs(hl.get_windows({ monitor = m.name })) do adopt(w, nil) end
   end
 
   setup_keys()
@@ -1219,6 +1242,9 @@ local function init()
   end
   save_state()
   schedule_emit()
+  if cfg.stray_sweep and cfg.stray_sweep > 0 then
+    hl.timer(guard("stray sweep", adopt_strays), { timeout = cfg.stray_sweep, type = "repeat" })
+  end
   log("init done: %d monitor(s)", #monitors)
 end
 

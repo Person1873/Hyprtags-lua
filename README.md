@@ -23,6 +23,9 @@ Tested on Omarchy 4.0.2, Hyprland 0.56.2 (Lua 5.5), Quickshell 0.3.1.
   with `hl.dsp.window.move({ follow = false, window = … })` so nothing else changes.
 - **New windows** take the current view's tags. A window that an Omarchy rule sends to
   workspace *N* (e.g. `o.window("qemu", { workspace = "5" })`) is adopted as tag *N*.
+- **Nothing stays untagged.** Any mapped window outside the scratchpad that carries no tag is
+  given tag 1 (`stray_tag`) and moved into the pair, checked after every change and on a 2 s
+  sweep, so a window can never sit on a workspace the keys cannot reach.
 - **The bar** gets one socket2 line per monitor on every change
   (`custom>>hyprtags>>eDP-1|v=2,3|o=1:2,2:1|u=|f=2`: viewed, occupied with counts, urgent,
   focused-window tags) and talks back with `hyprctl eval 'hyprtags.view(3, "eDP-1")'`.
@@ -48,13 +51,15 @@ The loader line is:
 
 ```lua
 package.path = os.getenv("HOME") .. "/Hyprtags-lua/?/init.lua;" .. package.path
-require("hyprtags").setup({ ntags = 9 })
+require("hyprtags").setup({})
 ```
 
 It must run after Omarchy's defaults and your own `hypr/bindings.lua`, because it unbinds
 the Omarchy chords it replaces and every bind on a key fires.
 
-`setup()` options: `ntags` (default 9), `bind_keys` (false = no keys at all),
+`setup()` options: `ntags` (default 21: digits 1..9 plus F1..F12), `fkeys` (false = digits
+only), `stray_tag` (default 1), `stray_sweep` ms (default 2000, 0 = only on changes),
+`bind_keys` (false = no keys at all),
 `unbind_omarchy` (false = leave Omarchy's digit/TAB binds alone), `combo_timeout` ms,
 `emit_delay` ms, and `keys = { view_prev, focusurgent, winview, sticky, shift_left,
 shift_right, tagmon_prev, tagmon_next }` to move or disable (`false`) any non-digit key.
@@ -65,10 +70,10 @@ Tag keys (owned by the module; follow dwm-flexipatch `TAGKEYS` with the combo pa
 
 | keys | action |
 |---|---|
-| `SUPER + 1..9` | view tag (hold SUPER and press several digits to view them together) |
-| `SUPER + SHIFT + 1..9` | put the focused window on that tag only (combo: several tags) |
-| `SUPER + CTRL + 1..9` | toggle the tag in the view |
-| `SUPER + CTRL + SHIFT + 1..9` | toggle the tag on the focused window |
+| `SUPER + 1..9`, `SUPER + F1..F12` | view tag 1..9 / 10..21 (hold SUPER and press several to view them together) |
+| `SUPER + SHIFT + <tag key>` | put the focused window on that tag only (combo: several tags) |
+| `SUPER + CTRL + <tag key>` | toggle the tag in the view |
+| `SUPER + CTRL + SHIFT + <tag key>` | toggle the tag on the focused window |
 | `SUPER + 0` / `SUPER + SHIFT + 0` | view all (again: back to the previous view) / tag with all |
 | `SUPER + TAB` | previous view (back and forth) |
 | `SUPER + U` | focus the urgent window (reveals its tag) |

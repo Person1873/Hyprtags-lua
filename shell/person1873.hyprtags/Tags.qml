@@ -14,7 +14,7 @@ BarWidget {
   id: root
   moduleName: "person1873.hyprtags"
 
-  property int ntags: Number(setting("ntags", 9))
+  property int ntags: Number(setting("ntags", 21))
   property string monitorName: ""
   property var viewed: ({})
   property var occupied: ({})
@@ -155,7 +155,8 @@ BarWidget {
           anchors.fill: parent
           bar: root.bar
           pressable: false
-          text: cell.hasFocus ? "󱓻" : String(cell.modelData)
+          // tags 10..21 live on F1..F12, so label them that way
+          text: cell.hasFocus ? "󱓻" : (cell.modelData > 9 ? "F" + (cell.modelData - 9) : String(cell.modelData))
           active: cell.isUrgent
           opacity: cell.isOccupied || cell.isViewed ? 1 : 0.5
           horizontalMargin: 6

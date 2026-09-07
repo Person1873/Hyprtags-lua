@@ -32,7 +32,7 @@ if ! grep -q 'require("hyprtags")' "$HYPR"; then
 -- Hyprtags: DWM-style tags (see $REPO/README.md). Must come after the Omarchy
 -- defaults and the personal bindings so its unbinds win.
 package.path = "$REPO/?/init.lua;" .. package.path
-require("hyprtags").setup({ ntags = 9 })
+require("hyprtags").setup({})
 EOF
 fi
 
