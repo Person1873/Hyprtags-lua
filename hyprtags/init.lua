@@ -1,0 +1,1213 @@
+-- Hyprtags: DWM-style tags for Hyprland's Lua config (Omarchy).
+--
+-- Model
+--   * Per monitor a pair of real workspaces: `vis` (the only one ever focused) and `hid`
+--     (parking lot). Windows outside the current view are moved to `hid` silently.
+--   * Membership lives in Hyprland's own window tags: `WMT3`, `WMT5` (exact names, so
+--     window rules and hl.get_windows({ tag = "WMT3" }) can match them).
+--   * Stack position lives in one more tag, `WMT_POS{3:1,5:2}` (tag:rank pairs), snapshotted
+--     from on-screen geometry when a window is hidden. Re-showing a tag re-inserts its
+--     windows lowest rank first, so a stack comes back as it was left.
+--   * `special:scratchpad` is untouched.
+--
+-- Everything the compositor needs to survive a config reload (tags, workspace placement)
+-- is compositor state; the small remainder (slot per monitor, current/previous view) is
+-- in ~/.local/state/hyprtags/state.lua.
+--
+-- Public surface (also reachable via `hyprctl eval 'hyprtags.view(3)'`): see the `M.*`
+-- functions near the bottom.
+
+local M = {}
+_G.hyprtags = M
+
+local HOME = os.getenv("HOME") or ""
+local unpack = table.unpack or unpack
+
+-- ---------------------------------------------------------------------------------------
+-- Configuration
+-- ---------------------------------------------------------------------------------------
+
+local cfg = {
+  ntags = 9,
+  state_dir = HOME .. "/.local/state/hyprtags",
+  -- Digit keycodes: code:10 = "1" ... code:18 = "9", code:19 = "0".
+  bind_keys = true,
+  unbind_omarchy = true,
+  combo_timeout = 1000, -- ms: fallback for the modifier-release detection
+  emit_delay = 30,      -- ms: debounce for bar events
+  keys = {
+    view_prev  = "SUPER + TAB",
+    focusurgent = "SUPER + U",
+    winview    = "SUPER + O",
+    sticky     = "SUPER + SHIFT + S",
+    shift_left = "SUPER + CTRL + LEFT",
+    shift_right = "SUPER + CTRL + RIGHT",
+    tagmon_prev = "SUPER + SHIFT + comma",
+    tagmon_next = "SUPER + SHIFT + period",
+  },
+}
+
+-- ---------------------------------------------------------------------------------------
+-- Runtime state (rebuilt on every config reload)
+-- ---------------------------------------------------------------------------------------
+
+local pairs_by_mon = {}   -- monname -> { vis = id, hid = id, slot = n }
+local mon_of_ws = {}      -- ws id -> monname
+local view = {}           -- monname -> { [tag] = true }
+local prev = {}           -- monname -> { [tag] = true } | nil
+local slots = {}          -- monname -> slot
+local urgent = {}         -- address -> true
+local fs_state = {}       -- address -> fullscreen mode saved at hide
+local busy = false
+local dirty = {}
+local emit_timer = nil
+local combo = { active = false, timer = nil }
+local log_lines = {}
+
+local function log(fmt, ...)
+  local line = os.date("%H:%M:%S ") .. string.format(fmt, ...)
+  log_lines[#log_lines + 1] = line
+  if #log_lines > 400 then table.remove(log_lines, 1) end
+end
+
+local function notify(text)
+  pcall(function()
+    hl.notification.create({ text = "hyprtags: " .. text, timeout = 6000 })
+  end)
+end
+
+local function guard(name, fn)
+  return function(...)
+    local ok, err = pcall(fn, ...)
+    if not ok then
+      log("ERROR in %s: %s", name, tostring(err))
+      notify(name .. ": " .. tostring(err))
+    end
+  end
+end
+
+local function dispatch(d)
+  local ok, err = pcall(hl.dispatch, d)
+  if not ok then log("dispatch failed: %s", tostring(err)) end
+  return ok
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Small helpers
+-- ---------------------------------------------------------------------------------------
+
+local function set_of(list)
+  local s = {}
+  for _, k in ipairs(list) do s[k] = true end
+  return s
+end
+
+local function sorted_keys(t)
+  local ks = {}
+  for k in pairs(t) do ks[#ks + 1] = k end
+  table.sort(ks)
+  return ks
+end
+
+local function set_empty(s)
+  return next(s) == nil
+end
+
+local function set_eq(a, b)
+  for k in pairs(a) do if not b[k] then return false end end
+  for k in pairs(b) do if not a[k] then return false end end
+  return true
+end
+
+local function set_copy(s)
+  local c = {}
+  for k, v in pairs(s) do c[k] = v end
+  return c
+end
+
+local function intersects(a, b)
+  for k in pairs(a) do if b[k] then return true end end
+  return false
+end
+
+local function all_tags()
+  local s = {}
+  for k = 1, cfg.ntags do s[k] = true end
+  return s
+end
+
+local function min_key(s)
+  local m
+  for k in pairs(s) do if not m or k < m then m = k end end
+  return m
+end
+
+local function wsel(w)
+  return "address:" .. tostring(w.address)
+end
+
+local function ws_id(w)
+  local ws = w.workspace
+  return ws and ws.id or nil
+end
+
+local function is_special(w)
+  local ws = w.workspace
+  return ws ~= nil and (ws.special or ws.id < 0)
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Tag codec
+-- ---------------------------------------------------------------------------------------
+
+-- Returns members = { [tag]=true }, pos = { [tag]=rank }, posraw = the WMT_POS string or nil.
+local function read_tags(w)
+  local members, pos, posraw = {}, {}, nil
+  local tags = w.tags
+  if type(tags) ~= "table" then return members, pos, posraw end
+  for _, t in ipairs(tags) do
+    local k = t:match("^WMT(%d+)$")
+    if k then
+      members[tonumber(k)] = true
+    else
+      local body = t:match("^WMT_POS{(.*)}$")
+      if body then
+        posraw = t
+        for tk, rk in body:gmatch("(%d+):(%d+)") do
+          pos[tonumber(tk)] = tonumber(rk)
+        end
+      end
+    end
+  end
+  return members, pos, posraw
+end
+
+local function pos_string(pos)
+  local parts = {}
+  for _, k in ipairs(sorted_keys(pos)) do
+    parts[#parts + 1] = k .. ":" .. pos[k]
+  end
+  if #parts == 0 then return nil end
+  return "WMT_POS{" .. table.concat(parts, ",") .. "}"
+end
+
+local function tag_op(w, str)
+  dispatch(hl.dsp.window.tag({ tag = str, window = wsel(w) }))
+end
+
+-- Write the desired membership + positions with the minimum number of tag operations.
+local function write_tags(w, members, pos)
+  local cur, _, curposraw = read_tags(w)
+  for k in pairs(cur) do
+    if not members[k] then tag_op(w, "-WMT" .. k) end
+  end
+  for k in pairs(members) do
+    if not cur[k] then tag_op(w, "+WMT" .. k) end
+  end
+  -- positions only for tags the window is a member of
+  local clean = {}
+  for k, r in pairs(pos) do if members[k] then clean[k] = r end end
+  local want = pos_string(clean)
+  if want ~= curposraw then
+    if curposraw then tag_op(w, "-" .. curposraw) end
+    if want then tag_op(w, "+" .. want) end
+  end
+end
+
+local function is_managed(w)
+  local m = read_tags(w)
+  return not set_empty(m)
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Monitors and workspace pairs
+-- ---------------------------------------------------------------------------------------
+
+local function pair_ids(slot)
+  local vis = 100 * (slot + 1) + 1
+  return vis, vis + 1
+end
+
+local function next_free_slot()
+  local used = {}
+  for _, s in pairs(slots) do used[s] = true end
+  local s = 0
+  while used[s] do s = s + 1 end
+  return s
+end
+
+local function register_rules(monname, vis, hid)
+  pcall(hl.workspace_rule, { workspace = tostring(vis), monitor = monname, persistent = true, default = true })
+  pcall(hl.workspace_rule, { workspace = tostring(hid), monitor = monname, persistent = true })
+end
+
+local save_state -- forward
+
+local function ensure_pair(monname)
+  local p = pairs_by_mon[monname]
+  if p then return p end
+  local slot = slots[monname]
+  if slot == nil then
+    slot = next_free_slot()
+    slots[monname] = slot
+    save_state()
+  end
+  local vis, hid = pair_ids(slot)
+  p = { vis = vis, hid = hid, slot = slot }
+  pairs_by_mon[monname] = p
+  mon_of_ws[vis] = monname
+  mon_of_ws[hid] = monname
+  register_rules(monname, vis, hid)
+  view[monname] = view[monname] or { [1] = true }
+  return p
+end
+
+local function monitor_by_name(name)
+  for _, m in ipairs(hl.get_monitors()) do
+    if m.name == name then return m end
+  end
+  return nil
+end
+
+local function active_monname()
+  local m = hl.get_active_monitor()
+  return m and m.name or nil
+end
+
+-- Monitor a window belongs to for tag purposes (by its workspace pair, else by monitor).
+local function monname_of(w)
+  local id = ws_id(w)
+  if id and mon_of_ws[id] then return mon_of_ws[id] end
+  local m = w.monitor
+  return m and m.name or nil
+end
+
+local function monitors_sorted()
+  local ms = hl.get_monitors()
+  table.sort(ms, function(a, b)
+    if a.x ~= b.x then return a.x < b.x end
+    return a.y < b.y
+  end)
+  return ms
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Persistent state
+-- ---------------------------------------------------------------------------------------
+
+local function serialize_set(s)
+  local parts = {}
+  for _, k in ipairs(sorted_keys(s)) do parts[#parts + 1] = "[" .. k .. "]=true" end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local function q(s)
+  return string.format("%q", s)
+end
+
+save_state = function()
+  local lines = { "return {", "  slots = {" }
+  for _, name in ipairs(sorted_keys(slots)) do
+    lines[#lines + 1] = string.format("    [%s] = %d,", q(name), slots[name])
+  end
+  lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "  view = {"
+  for _, name in ipairs(sorted_keys(view)) do
+    lines[#lines + 1] = string.format("    [%s] = %s,", q(name), serialize_set(view[name]))
+  end
+  lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "  prev = {"
+  for _, name in ipairs(sorted_keys(prev)) do
+    if prev[name] then
+      lines[#lines + 1] = string.format("    [%s] = %s,", q(name), serialize_set(prev[name]))
+    end
+  end
+  lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "}"
+  local body = table.concat(lines, "\n") .. "\n"
+
+  os.execute("mkdir -p '" .. cfg.state_dir:gsub("'", "'\\''") .. "'")
+  local path = cfg.state_dir .. "/state.lua"
+  local tmp = path .. ".tmp"
+  local f = io.open(tmp, "w")
+  if not f then log("cannot write %s", tmp) return end
+  f:write(body)
+  f:close()
+  os.rename(tmp, path)
+end
+
+local function load_state()
+  local path = cfg.state_dir .. "/state.lua"
+  local chunk = loadfile(path)
+  if not chunk then return {} end
+  local ok, data = pcall(chunk)
+  if not ok or type(data) ~= "table" then return {} end
+  return data
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Window queries
+-- ---------------------------------------------------------------------------------------
+
+local function windows_on(wsid)
+  local out = {}
+  for _, w in ipairs(hl.get_windows({ workspace = wsid })) do
+    if w.mapped and not w.pinned then out[#out + 1] = w end
+  end
+  return out
+end
+
+-- Windows on a monitor's pair that carry membership tags.
+local function managed_windows(monname)
+  local p = pairs_by_mon[monname]
+  if not p then return {} end
+  local out = {}
+  for _, id in ipairs({ p.vis, p.hid }) do
+    for _, w in ipairs(windows_on(id)) do
+      if is_managed(w) then out[#out + 1] = w end
+    end
+  end
+  return out
+end
+
+-- On-screen order: tiled before floating, then x then y (master first / stack top-down,
+-- dwindle left-to-right top-to-bottom).
+local function geometry_sorted(wins)
+  local items = {}
+  for _, w in ipairs(wins) do
+    local at = w.at or {}
+    items[#items + 1] = { w = w, f = w.floating and 1 or 0, x = at.x or at[1] or 0, y = at.y or at[2] or 0 }
+  end
+  table.sort(items, function(a, b)
+    if a.f ~= b.f then return a.f < b.f end
+    if math.abs(a.x - b.x) > 2 then return a.x < b.x end
+    if math.abs(a.y - b.y) > 2 then return a.y < b.y end
+    return tostring(a.w.address) < tostring(b.w.address)
+  end)
+  local out = {}
+  for i, it in ipairs(items) do out[i] = it.w end
+  return out
+end
+
+-- Highest rank currently recorded for a tag on a monitor (0 if none).
+local function max_rank(monname, k)
+  local m = 0
+  for _, w in ipairs(managed_windows(monname)) do
+    local members, pos = read_tags(w)
+    if members[k] then
+      local r = pos[k] or 0
+      if r > m then m = r end
+    end
+  end
+  return m
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Rank snapshot
+-- ---------------------------------------------------------------------------------------
+
+-- Write ranks for every visible managed window on `monname`, for the given tag set
+-- (normally the view being left). Only rewrites WMT_POS when it actually changes.
+local function snapshot_ranks(monname, tagset)
+  local p = pairs_by_mon[monname]
+  if not p then return end
+  local visible = {}
+  for _, w in ipairs(windows_on(p.vis)) do
+    if is_managed(w) then visible[#visible + 1] = w end
+  end
+  local ordered = geometry_sorted(visible)
+  local counters = {}
+  for _, w in ipairs(ordered) do
+    local members, pos = read_tags(w)
+    local changed = false
+    for k in pairs(members) do
+      if tagset[k] then
+        counters[k] = (counters[k] or 0) + 1
+        if pos[k] ~= counters[k] then
+          pos[k] = counters[k]
+          changed = true
+        end
+      end
+    end
+    if changed then write_tags(w, members, pos) end
+  end
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Focus and reconcile
+-- ---------------------------------------------------------------------------------------
+
+local function fix_focus(monname, prefer)
+  local p = pairs_by_mon[monname]
+  if not p then return end
+  local aw = hl.get_active_window()
+  if aw and ws_id(aw) == p.vis then return end
+  local cands = windows_on(p.vis)
+  local pick = nil
+  if prefer then
+    for _, w in ipairs(cands) do
+      if w.address == prefer then pick = w break end
+    end
+  end
+  if not pick then
+    for _, w in ipairs(cands) do
+      if not pick or (w.focus_history_id or 1e9) < (pick.focus_history_id or 1e9) then pick = w end
+    end
+  end
+  if pick then
+    dispatch(hl.dsp.focus({ window = wsel(pick) }))
+  else
+    local m = monitor_by_name(monname)
+    if m and m.active_workspace and m.active_workspace.id ~= p.vis then
+      dispatch(hl.dsp.focus({ workspace = p.vis }))
+    end
+  end
+end
+
+local emit_all
+local schedule_emit
+
+-- opts: { old_view = set | nil, prefer = address | nil, focus = bool }
+local function reconcile(monname, opts, depth)
+  opts = opts or {}
+  depth = depth or 0
+  if busy then dirty[monname] = true return end
+  local p = pairs_by_mon[monname]
+  if not p then return end
+  local V = view[monname] or { [1] = true }
+  busy = true
+  local ok, err = pcall(function()
+    if opts.old_view then snapshot_ranks(monname, opts.old_view) end
+
+    local hide, show = {}, {}
+    for _, w in ipairs(managed_windows(monname)) do
+      local members, pos = read_tags(w)
+      local should = intersects(members, V)
+      local id = ws_id(w)
+      if not should and id == p.vis then
+        hide[#hide + 1] = w
+      elseif should and id == p.hid then
+        local mk = nil
+        for k in pairs(members) do
+          if V[k] and (not mk or k < mk) then mk = k end
+        end
+        show[#show + 1] = { w = w, k = mk or 1e9, r = (mk and pos[mk]) or 1e9 }
+      end
+    end
+
+    for _, w in ipairs(hide) do
+      local f = w.fullscreen
+      if f and f ~= 0 then fs_state[w.address] = f end
+      dispatch(hl.dsp.window.move({ workspace = p.hid, follow = false, window = wsel(w) }))
+    end
+
+    table.sort(show, function(a, b)
+      if a.k ~= b.k then return a.k < b.k end
+      if a.r ~= b.r then return a.r < b.r end
+      return tostring(a.w.address) < tostring(b.w.address)
+    end)
+    for _, it in ipairs(show) do
+      dispatch(hl.dsp.window.move({ workspace = p.vis, follow = false, window = wsel(it.w) }))
+      -- chain focus so dwindle inserts the next one relative to this one
+      dispatch(hl.dsp.focus({ window = wsel(it.w) }))
+    end
+    for _, it in ipairs(show) do
+      local f = fs_state[it.w.address]
+      if f then
+        fs_state[it.w.address] = nil
+        local mode = (f == 2) and "maximized" or "fullscreen"
+        dispatch(hl.dsp.window.fullscreen({ mode = mode, window = wsel(it.w) }))
+      end
+    end
+
+    if opts.focus ~= false then fix_focus(monname, opts.prefer) end
+  end)
+  busy = false
+  if not ok then log("reconcile(%s) failed: %s", monname, tostring(err)) end
+  if dirty[monname] and depth < 3 then
+    dirty[monname] = nil
+    reconcile(monname, { focus = opts.focus }, depth + 1)
+  end
+  dirty[monname] = nil
+  schedule_emit()
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Bar IPC
+-- ---------------------------------------------------------------------------------------
+
+local function emit_line(monname)
+  local p = pairs_by_mon[monname]
+  if not p then return nil end
+  local occ, urg, foc = {}, {}, {}
+  local aw = hl.get_active_window()
+  for _, w in ipairs(managed_windows(monname)) do
+    local members = read_tags(w)
+    for k in pairs(members) do
+      occ[k] = (occ[k] or 0) + 1
+      if urgent[w.address] then urg[k] = true end
+      if aw and aw.address == w.address then foc[k] = true end
+    end
+  end
+  local v = table.concat(sorted_keys(view[monname] or {}), ",")
+  local o = {}
+  for _, k in ipairs(sorted_keys(occ)) do o[#o + 1] = k .. ":" .. occ[k] end
+  return string.format("hyprtags>>%s|v=%s|o=%s|u=%s|f=%s", monname, v, table.concat(o, ","),
+    table.concat(sorted_keys(urg), ","), table.concat(sorted_keys(foc), ","))
+end
+
+emit_all = function()
+  for _, m in ipairs(hl.get_monitors()) do
+    local line = emit_line(m.name)
+    if line then dispatch(hl.dsp.event(line)) end
+  end
+end
+
+schedule_emit = function()
+  if emit_timer then return end
+  emit_timer = hl.timer(function()
+    emit_timer = nil
+    local ok, err = pcall(emit_all)
+    if not ok then log("emit failed: %s", tostring(err)) end
+  end, { timeout = cfg.emit_delay, type = "oneshot" })
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Operations
+-- ---------------------------------------------------------------------------------------
+
+local function resolve_mon(monname)
+  if monname and pairs_by_mon[monname] then return monname end
+  local a = active_monname()
+  if a and pairs_by_mon[a] then return a end
+  return nil
+end
+
+local function set_view(monname, newset, opts)
+  monname = resolve_mon(monname)
+  if not monname or set_empty(newset) then return end
+  local cur = view[monname]
+  if set_eq(cur, newset) then
+    -- still make sure the monitor is on its visible workspace
+    fix_focus(monname)
+    schedule_emit()
+    return
+  end
+  prev[monname] = set_copy(cur)
+  view[monname] = set_copy(newset)
+  save_state()
+  reconcile(monname, { old_view = cur, prefer = opts and opts.prefer })
+end
+
+local function assign_tags(w, members, monname)
+  monname = monname or monname_of(w)
+  local cur, pos = read_tags(w)
+  local newpos = {}
+  for k in pairs(members) do
+    if cur[k] and pos[k] then
+      newpos[k] = pos[k]
+    else
+      newpos[k] = (monname and max_rank(monname, k) or 0) + 1
+    end
+  end
+  write_tags(w, members, newpos)
+end
+
+local function target_window(w)
+  if w then return w end
+  local aw = hl.get_active_window()
+  if not aw or is_special(aw) or aw.pinned then return nil end
+  return aw
+end
+
+local function next_focus_after(w)
+  local monname = monname_of(w)
+  local p = monname and pairs_by_mon[monname]
+  if not p then return nil end
+  local best
+  for _, o in ipairs(windows_on(p.vis)) do
+    if o.address ~= w.address then
+      if not best or (o.focus_history_id or 1e9) < (best.focus_history_id or 1e9) then best = o end
+    end
+  end
+  return best and best.address or nil
+end
+
+function M.view(tags, monname)
+  local s = type(tags) == "table" and set_of(tags) or { [tonumber(tags)] = true }
+  set_view(monname, s)
+end
+
+function M.toggleview(k, monname)
+  monname = resolve_mon(monname)
+  if not monname then return end
+  k = tonumber(k)
+  local s = set_copy(view[monname])
+  if s[k] then s[k] = nil else s[k] = true end
+  if set_empty(s) then return end
+  set_view(monname, s)
+end
+
+function M.view_all(monname) set_view(monname, all_tags()) end
+
+function M.view_previous(monname)
+  monname = resolve_mon(monname)
+  if not monname or not prev[monname] then return end
+  set_view(monname, prev[monname])
+end
+
+function M.tag(tags, w, monname)
+  w = target_window(w)
+  if not w then return end
+  local s = type(tags) == "table" and set_of(tags) or { [tonumber(tags)] = true }
+  if set_empty(s) then return end
+  monname = monname_of(w) or resolve_mon(monname)
+  assign_tags(w, s, monname)
+  if monname then reconcile(monname, { prefer = next_focus_after(w) }) end
+end
+
+function M.toggletag(k, w, monname)
+  w = target_window(w)
+  if not w then return end
+  k = tonumber(k)
+  local members = read_tags(w)
+  if members[k] then
+    members[k] = nil
+    if set_empty(members) then return end -- refuse to strip the last tag
+  else
+    members[k] = true
+  end
+  monname = monname_of(w) or resolve_mon(monname)
+  assign_tags(w, members, monname)
+  if monname then reconcile(monname, { prefer = next_focus_after(w) }) end
+end
+
+function M.tag_all(w) M.tag(sorted_keys(all_tags()), w) end
+
+function M.winview()
+  local aw = hl.get_active_window()
+  if not aw then return end
+  local members = read_tags(aw)
+  if set_empty(members) then return end
+  set_view(monname_of(aw), members)
+end
+
+function M.focusurgent()
+  local w = hl.get_urgent_window()
+  if not w then
+    for a in pairs(urgent) do
+      w = hl.get_window("address:" .. a)
+      if w then break end
+    end
+  end
+  if not w then return end
+  local monname = monname_of(w)
+  local p = monname and pairs_by_mon[monname]
+  if p and ws_id(w) == p.hid then
+    local members = read_tags(w)
+    local k = min_key(members)
+    if k then set_view(monname, { [k] = true }, { prefer = w.address }) end
+  end
+  dispatch(hl.dsp.focus({ window = wsel(w) }))
+end
+
+function M.sticky()
+  dispatch(hl.dsp.window.pin())
+end
+
+-- Shift the focused window's tags and the view by `dir` (wraps), dwm shiftboth.
+local function shift_set(s, dir)
+  local out = {}
+  for k in pairs(s) do
+    local nk = ((k - 1 + dir) % cfg.ntags) + 1
+    out[nk] = true
+  end
+  return out
+end
+
+function M.shiftboth(dir)
+  local aw = target_window(nil)
+  local monname = aw and monname_of(aw) or resolve_mon(nil)
+  if not monname then return end
+  if aw and is_managed(aw) then
+    local members = read_tags(aw)
+    assign_tags(aw, shift_set(members, dir), monname)
+  end
+  set_view(monname, shift_set(view[monname], dir), { prefer = aw and aw.address })
+end
+
+function M.shiftview(dir)
+  local monname = resolve_mon(nil)
+  if not monname then return end
+  set_view(monname, shift_set(view[monname], dir))
+end
+
+-- Send focused window to the next/previous monitor; it takes that monitor's view.
+function M.tagmon(dir)
+  local aw = target_window(nil)
+  if not aw then return end
+  local ms = monitors_sorted()
+  if #ms < 2 then return end
+  local src = monname_of(aw)
+  local idx = 1
+  for i, m in ipairs(ms) do if m.name == src then idx = i end end
+  local target = ms[((idx - 1 + dir) % #ms) + 1].name
+  local p = ensure_pair(target)
+  assign_tags(aw, set_copy(view[target]), target)
+  dispatch(hl.dsp.window.move({ workspace = p.vis, follow = false, window = wsel(aw) }))
+  if src then reconcile(src, {}) end
+  reconcile(target, { focus = false })
+end
+
+function M.emit() emit_all() end
+
+function M.relayout(monname)
+  monname = resolve_mon(monname)
+  if monname then snapshot_ranks(monname, view[monname]) end
+  schedule_emit()
+end
+
+function M.debug()
+  local lines = {}
+  lines[#lines + 1] = "monitors:"
+  for name, p in pairs(pairs_by_mon) do
+    lines[#lines + 1] = string.format("  %s vis=%d hid=%d view={%s} prev={%s}", name, p.vis, p.hid,
+      table.concat(sorted_keys(view[name] or {}), ","), table.concat(sorted_keys(prev[name] or {}), ","))
+  end
+  lines[#lines + 1] = "windows:"
+  for _, w in ipairs(hl.get_windows()) do
+    local members, pos = read_tags(w)
+    lines[#lines + 1] = string.format("  %s ws=%s class=%s tags={%s} pos=%s urgent=%s", tostring(w.address),
+      tostring(ws_id(w)), tostring(w.class), table.concat(sorted_keys(members), ","), pos_string(pos) or "-",
+      tostring(urgent[w.address] or false))
+  end
+  lines[#lines + 1] = "log:"
+  for _, l in ipairs(log_lines) do lines[#lines + 1] = "  " .. l end
+  local f = io.open(cfg.state_dir .. "/debug.txt", "w")
+  if f then f:write(table.concat(lines, "\n"), "\n") f:close() end
+  return table.concat(lines, "\n")
+end
+
+-- Undo: every managed window back onto workspace 1, tags stripped. For uninstalling.
+function M.uninstall()
+  for _, w in ipairs(hl.get_windows()) do
+    local members, _, posraw = read_tags(w)
+    if not set_empty(members) then
+      for k in pairs(members) do tag_op(w, "-WMT" .. k) end
+      if posraw then tag_op(w, "-" .. posraw) end
+      if not is_special(w) then
+        dispatch(hl.dsp.window.move({ workspace = 1, follow = false, window = wsel(w) }))
+      end
+    end
+  end
+  dispatch(hl.dsp.focus({ workspace = 1 }))
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Adoption of windows that are not (yet) managed
+-- ---------------------------------------------------------------------------------------
+
+local function legacy_tag_for(wsid)
+  if wsid >= 1 and wsid <= cfg.ntags then return wsid end
+  if wsid > cfg.ntags and wsid < 100 then return cfg.ntags end
+  return nil
+end
+
+-- Bring one window under management according to where it sits. Returns the monitor
+-- name that needs a reconcile, or nil.
+local function adopt(w)
+  if not w.mapped or w.pinned or is_special(w) then return nil end
+  if is_managed(w) then return nil end
+  local id = ws_id(w)
+  if not id then return nil end
+  local monname = mon_of_ws[id]
+  if monname then
+    local p = pairs_by_mon[monname]
+    local V = view[monname]
+    if id == p.vis then
+      assign_tags(w, set_copy(V), monname)
+    else
+      -- on the hidden workspace without tags: park it on the lowest tag not in view
+      local k = 1
+      while V[k] and k < cfg.ntags do k = k + 1 end
+      if V[k] then k = 1 end
+      assign_tags(w, { [k] = true }, monname)
+    end
+    return monname
+  end
+  local k = legacy_tag_for(id)
+  if k then
+    local m = w.monitor
+    monname = m and m.name or active_monname()
+    if not monname then return nil end
+    local p = ensure_pair(monname)
+    assign_tags(w, { [k] = true }, monname)
+    local dest = view[monname][k] and p.vis or p.hid
+    dispatch(hl.dsp.window.move({ workspace = dest, follow = false, window = wsel(w) }))
+    return monname
+  end
+  return nil
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Keys
+-- ---------------------------------------------------------------------------------------
+
+local OMARCHY_UNBINDS = {
+  "SUPER + TAB", "SUPER + SHIFT + TAB", "SUPER + CTRL + TAB",
+  "SUPER + mouse_down", "SUPER + mouse_up",
+  -- displaced by the dwm map below
+  "SUPER + O",            -- Pop window out -> SUPER + ALT + O
+  "SUPER + CTRL + LEFT",  -- group prev
+  "SUPER + CTRL + RIGHT", -- group next
+  "SUPER + SHIFT + S",    -- Google Maps webapp
+}
+
+local function combo_reset()
+  combo.active = false
+  if combo.timer then
+    pcall(function() combo.timer:set_enabled(false) end)
+    combo.timer = nil
+  end
+end
+
+local function combo_touch()
+  combo.active = true
+  if combo.timer then pcall(function() combo.timer:set_enabled(false) end) end
+  combo.timer = hl.timer(function()
+    combo.timer = nil
+    combo.active = false
+  end, { timeout = cfg.combo_timeout, type = "oneshot" })
+end
+
+local function comboview(k)
+  local monname = resolve_mon(nil)
+  if not monname then return end
+  if combo.active then
+    local s = set_copy(view[monname])
+    s[k] = true
+    set_view(monname, s)
+  else
+    set_view(monname, { [k] = true })
+  end
+  combo_touch()
+end
+
+local function combotag(k)
+  local w = target_window(nil)
+  if not w then return end
+  local members = read_tags(w)
+  if combo.active and not set_empty(members) then
+    members[k] = true
+    M.tag(sorted_keys(members), w)
+  else
+    M.tag(k, w)
+  end
+  combo_touch()
+end
+
+local function bind(keys, fn, desc)
+  if not keys then return end
+  hl.bind(keys, guard(desc, fn), { description = desc })
+end
+
+local function setup_keys()
+  if cfg.unbind_omarchy then
+    for i = 1, 10 do
+      local key = "code:" .. tostring(i + 9)
+      hl.unbind("SUPER + " .. key)
+      hl.unbind("SUPER + SHIFT + " .. key)
+      hl.unbind("SUPER + SHIFT + ALT + " .. key)
+    end
+    for _, k in ipairs(OMARCHY_UNBINDS) do hl.unbind(k) end
+    hl.bind("SUPER + ALT + O", hl.dsp.exec_cmd("omarchy-hyprland-window-pop"), { description = "Pop window out (float & pin)" })
+  end
+  if not cfg.bind_keys then return end
+
+  for k = 1, math.min(cfg.ntags, 9) do
+    local key = "code:" .. tostring(k + 9)
+    bind("SUPER + " .. key, function() comboview(k) end, "View tag " .. k)
+    bind("SUPER + CTRL + " .. key, function() M.toggleview(k) end, "Toggle view of tag " .. k)
+    bind("SUPER + SHIFT + " .. key, function() combotag(k) end, "Tag window " .. k)
+    bind("SUPER + CTRL + SHIFT + " .. key, function() M.toggletag(k) end, "Toggle window tag " .. k)
+  end
+  bind("SUPER + code:19", function() M.view_all() end, "View all tags")
+  bind("SUPER + SHIFT + code:19", function() M.tag_all() end, "Tag window with all tags")
+
+  local K = cfg.keys
+  bind(K.view_prev, function() M.view_previous() end, "View previous tags")
+  bind(K.focusurgent, function() M.focusurgent() end, "Focus urgent window")
+  bind(K.winview, function() M.winview() end, "View the focused window's tags")
+  bind(K.sticky, function() M.sticky() end, "Toggle sticky (pin)")
+  bind(K.shift_left, function() M.shiftboth(-1) end, "Shift window and view to previous tag")
+  bind(K.shift_right, function() M.shiftboth(1) end, "Shift window and view to next tag")
+  bind(K.tagmon_prev, function() M.tagmon(-1) end, "Send window to previous monitor")
+  bind(K.tagmon_next, function() M.tagmon(1) end, "Send window to next monitor")
+
+  -- Combo reset on modifier release; the timer above is the fallback if this never fires.
+  pcall(hl.bind, "SUPER + Super_L", combo_reset, { release = true, description = "hyprtags combo reset" })
+  pcall(hl.bind, "SUPER + Super_R", combo_reset, { release = true, description = "hyprtags combo reset" })
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Events
+-- ---------------------------------------------------------------------------------------
+
+local function later(ms, fn)
+  hl.timer(guard("timer", fn), { timeout = ms, type = "oneshot" })
+end
+
+local function setup_events()
+  hl.on("window.open", guard("window.open", function(w)
+    if busy then return end
+    local monname = adopt(w)
+    if monname then reconcile(monname, {}) else schedule_emit() end
+  end))
+
+  hl.on("window.close", guard("window.close", function(w)
+    if w then urgent[w.address] = nil fs_state[w.address] = nil end
+    schedule_emit()
+  end))
+  hl.on("window.destroy", guard("window.destroy", function(w)
+    if w then urgent[w.address] = nil fs_state[w.address] = nil end
+    schedule_emit()
+  end))
+
+  hl.on("window.active", guard("window.active", function(w)
+    if w then urgent[w.address] = nil end
+    schedule_emit()
+  end))
+
+  hl.on("window.urgent", guard("window.urgent", function(w)
+    if w then urgent[w.address] = true end
+    schedule_emit()
+  end))
+
+  hl.on("window.move_to_workspace", guard("window.move_to_workspace", function(w, ws)
+    if busy or not w or not ws then return end
+    if ws.special or ws.id < 0 then schedule_emit() return end
+    local id = ws.id
+    local monname = mon_of_ws[id]
+    if monname then
+      if is_managed(w) then
+        local members = read_tags(w)
+        local p = pairs_by_mon[monname]
+        local should = intersects(members, view[monname])
+        local src = nil
+        -- came from another monitor's pair? retag with this monitor's view (dwm sendmon)
+        local wm = w.monitor
+        if wm and wm.name ~= monname and pairs_by_mon[wm.name] then src = wm.name end
+        if src or (id == p.vis and not should) or (id == p.hid and should) then
+          if src then assign_tags(w, set_copy(view[monname]), monname) end
+          later(1, function() reconcile(monname, {}) end)
+        else
+          schedule_emit()
+        end
+      else
+        later(1, function()
+          local mn = adopt(w)
+          if mn then reconcile(mn, {}) end
+        end)
+      end
+      return
+    end
+    if legacy_tag_for(id) then
+      later(1, function()
+        local k = legacy_tag_for(id)
+        local m = w.monitor
+        local mn = m and m.name or active_monname()
+        if not mn then return end
+        local p = ensure_pair(mn)
+        assign_tags(w, { [k] = true }, mn)
+        local dest = view[mn][k] and p.vis or p.hid
+        dispatch(hl.dsp.window.move({ workspace = dest, follow = false, window = wsel(w) }))
+        reconcile(mn, {})
+      end)
+    end
+  end))
+
+  hl.on("workspace.active", guard("workspace.active", function(ws)
+    if busy or not ws then return end
+    local id = ws.id
+    local monname = mon_of_ws[id]
+    if monname then
+      local p = pairs_by_mon[monname]
+      if id == p.hid then
+        later(1, function()
+          local aw = hl.get_active_window()
+          if aw and ws_id(aw) == p.hid and is_managed(aw) then
+            local k = min_key((read_tags(aw)))
+            set_view(monname, { [k] = true }, { prefer = aw.address })
+          else
+            dispatch(hl.dsp.focus({ workspace = p.vis }))
+          end
+        end)
+      else
+        schedule_emit()
+      end
+      return
+    end
+    if id > 0 and legacy_tag_for(id) then
+      later(1, function()
+        local k = legacy_tag_for(id)
+        local m = ws.monitor
+        local mn = m and m.name or active_monname()
+        if not mn then return end
+        ensure_pair(mn)
+        for _, w in ipairs(windows_on(id)) do adopt(w) end
+        set_view(mn, { [k] = true })
+        local p = pairs_by_mon[mn]
+        dispatch(hl.dsp.focus({ workspace = p.vis }))
+      end)
+    end
+  end))
+
+  hl.on("monitor.added", guard("monitor.added", function(m)
+    if not m then return end
+    local name = m.name
+    later(50, function()
+      local p = ensure_pair(name)
+      for _, w in ipairs(hl.get_windows({ monitor = name })) do adopt(w) end
+      reconcile(name, {})
+      local mm = monitor_by_name(name)
+      if mm and mm.active_workspace and mm.active_workspace.id ~= p.vis then
+        dispatch(hl.dsp.focus({ workspace = p.vis }))
+      end
+    end)
+  end))
+
+  hl.on("monitor.removed", guard("monitor.removed", function(m)
+    local name = m and m.name or nil
+    later(50, function()
+      local survivor = active_monname()
+      if not survivor or survivor == name then
+        local ms = hl.get_monitors()
+        survivor = ms[1] and ms[1].name or nil
+      end
+      if not survivor then return end
+      local sp = ensure_pair(survivor)
+      local dead = name and pairs_by_mon[name]
+      if dead then
+        for _, id in ipairs({ dead.vis, dead.hid }) do
+          for _, w in ipairs(windows_on(id)) do
+            dispatch(hl.dsp.window.move({ workspace = sp.hid, follow = false, window = wsel(w) }))
+          end
+        end
+        pairs_by_mon[name] = nil
+        mon_of_ws[dead.vis] = nil
+        mon_of_ws[dead.hid] = nil
+      end
+      reconcile(survivor, {})
+    end)
+  end))
+
+  hl.on("workspace.move_to_monitor", guard("workspace.move_to_monitor", function(ws, m)
+    if busy or not ws or not m then return end
+    local owner = mon_of_ws[ws.id]
+    if owner and owner ~= m.name then
+      local id = ws.id
+      later(1, function()
+        dispatch(hl.dsp.workspace.move({ workspace = id, monitor = owner }))
+      end)
+    end
+  end))
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Init
+-- ---------------------------------------------------------------------------------------
+
+local function derive_view(monname)
+  local p = pairs_by_mon[monname]
+  local s = {}
+  for _, w in ipairs(windows_on(p.vis)) do
+    for k in pairs((read_tags(w))) do s[k] = true end
+  end
+  return s
+end
+
+local function view_consistent(monname, V)
+  local p = pairs_by_mon[monname]
+  for _, w in ipairs(windows_on(p.vis)) do
+    local members = read_tags(w)
+    if not set_empty(members) and not intersects(members, V) then return false end
+  end
+  for _, w in ipairs(windows_on(p.hid)) do
+    local members = read_tags(w)
+    if not set_empty(members) and intersects(members, V) then return false end
+  end
+  return true
+end
+
+local function init()
+  local st = load_state()
+  slots = st.slots or {}
+  local saved_view = st.view or {}
+  local saved_prev = st.prev or {}
+
+  -- rules for every monitor we have ever seen, so a replugged one lands on its pair
+  for name in pairs(slots) do
+    local vis, hid = pair_ids(slots[name])
+    register_rules(name, vis, hid)
+  end
+
+  local monitors = hl.get_monitors()
+  for _, m in ipairs(monitors) do
+    local name = m.name
+    local saved = saved_view[name]
+    ensure_pair(name)
+    prev[name] = saved_prev[name]
+
+    local V = saved
+    if not V or set_empty(V) or not view_consistent(name, V) then
+      V = derive_view(name)
+      if set_empty(V) then
+        -- fresh install: keep whatever legacy workspace is on screen as the first tag
+        local aws = m.active_workspace
+        local k = aws and legacy_tag_for(aws.id) or nil
+        V = { [k or 1] = true }
+      end
+    end
+    view[name] = V
+  end
+
+  for _, m in ipairs(monitors) do
+    for _, w in ipairs(hl.get_windows({ monitor = m.name })) do adopt(w) end
+  end
+
+  setup_keys()
+  setup_events()
+
+  for _, m in ipairs(monitors) do
+    reconcile(m.name, { focus = false })
+    local p = pairs_by_mon[m.name]
+    local mm = monitor_by_name(m.name)
+    if mm and mm.active_workspace then
+      local id = mm.active_workspace.id
+      if id ~= p.vis and id > 0 then dispatch(hl.dsp.focus({ workspace = p.vis })) end
+    end
+  end
+  save_state()
+  schedule_emit()
+  log("init done: %d monitor(s)", #monitors)
+end
+
+function M.setup(opts)
+  opts = opts or {}
+  for k, v in pairs(opts) do
+    if k == "keys" and type(v) == "table" then
+      for kk, vv in pairs(v) do cfg.keys[kk] = vv end
+    else
+      cfg[k] = v
+    end
+  end
+  local ok, err = pcall(init)
+  if not ok then
+    log("init failed: %s", tostring(err))
+    notify("init failed: " .. tostring(err))
+  end
+  return M
+end
+
+M.cfg = cfg
+return M
