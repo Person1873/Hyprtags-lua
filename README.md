@@ -153,7 +153,7 @@ Apps go through Omarchy's default-app selectors, never a hard-coded binary:
 |---|---|---|
 | `SUPER + P` | apps menu (`omarchy-menu toggle apps`) | Pseudo window |
 | `SUPER + R` | Omarchy menu | — |
-| `SUPER + RETURN` | terminal (`xdg-terminal-exec`, Omarchy default) | — |
+| `SUPER + RETURN` | Herdr terminal (`omarchy-launch-terminal-herdr`) | plain terminal, dropped |
 | `SUPER + W` | focus the running default browser (any tag) or launch it; class read from the xdg default browser's desktop entry | Close window → `SUPER + X` |
 | `SUPER + ALT + W` | find window: `bin/hyprtags-windows`, every window with its tags in the Omarchy picker; focusing a hidden one reveals its tag | — |
 | `SUPER + X` | close window | Universal cut |
