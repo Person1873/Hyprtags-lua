@@ -4,8 +4,10 @@
 #   - this widget's entries in ~/.config/omarchy/shell.json (omarchy.workspaces put back)
 # Then reloads Hyprland and restarts the shell.
 #
-#   uninstall.sh                 config only; windows keep their tags until Hyprland restarts
-#   uninstall.sh --reset-windows also strips tags and moves every window to workspace 1 first
+#   uninstall.sh                 windows go to the workspace numbered like their tag
+#                                (lowest tag; tags above 10 go to 1), tags stripped, then
+#                                the config edits are reversed
+#   uninstall.sh --keep-windows  leave windows where they are (on 101/102, tags intact)
 #   uninstall.sh --purge-state   also deletes ~/.local/state/hypr-dwm-land
 # The plugin folder itself is removed with: omarchy plugin remove <id>
 set -euo pipefail
@@ -22,12 +24,13 @@ STATE="${XDG_STATE_HOME:-$HOME/.local/state}/hypr-dwm-land"
 BEGIN="-- BEGIN hypr-dwm-land (managed by $ID/install.sh; remove with uninstall.sh)"
 END="-- END hypr-dwm-land"
 stamp=$(date +%s)
-reset_windows=0; purge=0
+reset_windows=1; purge=0
 for a in "$@"; do
   case $a in
-    --reset-windows) reset_windows=1 ;;
+    --keep-windows) reset_windows=0 ;;
+    --reset-windows) reset_windows=1 ;;   # the default; kept for scripts
     --purge-state) purge=1 ;;
-    *) echo "usage: uninstall.sh [--reset-windows] [--purge-state]" >&2; exit 2 ;;
+    *) echo "usage: uninstall.sh [--keep-windows] [--purge-state]" >&2; exit 2 ;;
   esac
 done
 

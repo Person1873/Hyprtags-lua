@@ -254,10 +254,14 @@ omarchy plugin remove person1873.hypr-dwm-land                    # the plugin f
 markers are missing, duplicated or out of order), puts `omarchy.workspaces` back in
 `shell.json`, then reloads Hyprland and restarts the shell. Backups are made first.
 
-What survives: `~/.local/state/hypr-dwm-land/` (add `--purge-state` to delete it), the
-`*.bak.<timestamp>` backups, and the tags on currently open windows until Hyprland restarts
-(add `--reset-windows` to strip them and move every window to workspace 1 first). Nothing
-else is left behind.
+Open windows are handed back as if tags had been workspaces all along: each goes to the
+workspace numbered like its lowest tag (tags above 10 go to workspace 1, since Omarchy's
+keys stop there), its tags are stripped, and the workspace matching your current view is
+focused. Scratchpad windows stay in the scratchpad. `--keep-windows` skips this and leaves
+windows on 101/102 with their tags.
+
+What survives: `~/.local/state/hypr-dwm-land/` (add `--purge-state` to delete it) and the
+`*.bak.<timestamp>` backups. Nothing else is left behind.
 
 ## Verifying an install
 

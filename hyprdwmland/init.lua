@@ -78,6 +78,7 @@ local pending = {}        -- monname -> true while a deferred reconcile is queue
 local bounce_block = {}   -- ws id -> true while a move_to_monitor bounce is cooling down
 local bounce_disabled = false
 local bind_failures = {}  -- "keys: error" strings from the last keys-module load
+local disabled = false    -- set by uninstall(): every handler and sweep becomes a no-op
 
 local function log(fmt, ...)
   local line = os.date("%H:%M:%S ") .. string.format(fmt, ...)
@@ -100,6 +101,7 @@ end
 
 local function guard(name, fn)
   return function(...)
+    if disabled then return end
     local ok, err = pcall(fn, ...)
     if not ok then
       log("ERROR in %s: %s", name, tostring(err))
@@ -1288,19 +1290,40 @@ function M.debug()
   return table.concat(lines, "\n")
 end
 
--- Undo: every managed window back onto workspace 1, tags stripped. For uninstalling.
+-- Undo, kindly: treat tags as workspaces. Each managed window goes to the workspace
+-- numbered like its lowest tag (1..10, the range Omarchy's keys reach; higher tags go to
+-- 1), tags stripped; scratchpad windows stay where they are; the view's lowest tag becomes
+-- the focused workspace. Handlers are switched off first so the moves are not adopted
+-- straight back as tags. A later `hyprctl reload` with the module still configured adopts
+-- workspace n back as tag n, so this round-trips.
+local function workspace_for(set)
+  local k = min_key(set) or 1
+  if k > 10 then k = 1 end
+  return k
+end
+
 function M.uninstall()
+  disabled = true
+  local seen_group = {}
   for _, w in ipairs(hl.get_windows()) do
     local members, _, posraw = read_tags(w)
     if not set_empty(members) then
+      local dest = workspace_for(w.group and group_tags(w) or members)
       for k in pairs(members) do tag_op(w, "-WMT" .. k) end
       if posraw then tag_op(w, "-" .. posraw) end
-      if not is_special(w) then
-        dispatch(hl.dsp.window.move({ workspace = 1, follow = false, window = wsel(w) }))
+      if not is_special(w) and not w.pinned then
+        local gk = w.group and group_key(w) or nil
+        if not gk or not seen_group[gk] then
+          if gk then seen_group[gk] = true end
+          dispatch(hl.dsp.window.move({ workspace = dest, follow = false, window = wsel(w) }))
+        end
       end
     end
   end
-  dispatch(hl.dsp.focus({ workspace = 1 }))
+  local mn = active_monname()
+  local target = mn and view[mn] and workspace_for(view[mn]) or 1
+  dispatch(hl.dsp.focus({ workspace = target }))
+  log("uninstall: windows placed on workspaces by lowest tag; handlers disabled")
 end
 
 -- ---------------------------------------------------------------------------------------
@@ -1344,7 +1367,7 @@ end
 -- Runs after every emit and on a timer, so a window that slipped past window.open (or was
 -- stripped by hand) can never stay stuck on a workspace the keys cannot reach.
 local function adopt_strays()
-  if busy then return end
+  if busy or disabled then return end
   local touched = {}
   local seen_group = {}
   for _, w in ipairs(hl.get_windows()) do
