@@ -39,6 +39,16 @@ local cfg = {
   stray_tag = 1,        -- untagged windows outside the scratchpad land here
   combo_timeout = 1000, -- ms: fallback for the modifier-release detection
   emit_delay = 30,      -- ms: debounce for bar events
+  -- Per-tag layouts (dwm PERTAG): the visible workspace's layout is remembered per view
+  -- and re-applied when that view returns. cycle_layout(±1) walks this list.
+  layouts = {
+    { layout = "dwindle" },
+    { layout = "master", opts = { orientation = "left" } },
+    { layout = "master", opts = { orientation = "center" }, name = "centre master" },
+    { layout = "scrolling" },
+  },
+  -- Seed per-tag layouts once from Omarchy's per-workspace files (workspace n -> tag n).
+  omarchy_layouts_dir = HOME .. "/.local/state/omarchy/workspace-layouts",
 }
 
 -- ---------------------------------------------------------------------------------------
@@ -58,6 +68,7 @@ local emit_timer = nil
 local combo = { active = false, timer = nil }
 local log_lines = {}
 local lastfocus = {}      -- monname -> { [viewkey] = address }  (address of the window to refocus)
+local layouts = {}        -- monname -> { [viewkey] = { layout = name, opts = {...}|nil } }
 local pending = {}        -- monname -> true while a deferred reconcile is queued
 local bounce_block = {}   -- ws id -> true while a move_to_monitor bounce is cooling down
 local bounce_disabled = false
@@ -338,6 +349,20 @@ save_state = function()
     lines[#lines + 1] = string.format("    [%s] = {%s},", q(name), table.concat(parts, ","))
   end
   lines[#lines + 1] = "  },"
+  lines[#lines + 1] = "  layout = {"
+  for _, name in ipairs(sorted_keys(layouts)) do
+    local parts = {}
+    for _, key in ipairs(sorted_keys(layouts[name])) do
+      local L = layouts[name][key]
+      local opts = {}
+      for _, ok in ipairs(sorted_keys(L.opts or {})) do
+        opts[#opts + 1] = string.format("[%s]=%s", q(ok), q(tostring(L.opts[ok])))
+      end
+      parts[#parts + 1] = string.format("[%s]={layout=%s,opts={%s}}", q(key), q(L.layout), table.concat(opts, ","))
+    end
+    lines[#lines + 1] = string.format("    [%s] = {%s},", q(name), table.concat(parts, ","))
+  end
+  lines[#lines + 1] = "  },"
   lines[#lines + 1] = "}"
   local body = table.concat(lines, "\n") .. "\n"
 
@@ -502,6 +527,99 @@ local function alive(addr)
   return nil
 end
 
+-- ---- per-tag layouts ----------------------------------------------------------------
+
+local function layout_equal(a, b)
+  if not a or not b or a.layout ~= b.layout then return false end
+  local ao, bo = a.opts or {}, b.opts or {}
+  for k, v in pairs(ao) do if tostring(bo[k]) ~= tostring(v) then return false end end
+  for k, v in pairs(bo) do if tostring(ao[k]) ~= tostring(v) then return false end end
+  return true
+end
+
+local function layout_label(L)
+  for _, e in ipairs(cfg.layouts) do
+    if layout_equal(e, L) then return e.name or e.layout end
+  end
+  return L.layout
+end
+
+-- dwm pertag slot for a view: the lowest selected tag, except the all-tags view which has
+-- a slot of its own. A combo therefore shows (and edits) its lowest tag's layout.
+local function layout_key(set)
+  if set_eq(set, all_tags()) then return "all" end
+  return tostring(min_key(set) or 1)
+end
+
+-- What the visible workspace is running right now. Only the algorithm name is readable
+-- (HL.Workspace.tiled_layout); options such as master orientation come from our record.
+local function current_layout(monname)
+  local p = pairs_by_mon[monname]
+  local m = monitor_by_name(monname)
+  local ws = m and m.active_workspace
+  if not p or not ws or ws.id ~= p.vis then return nil end
+  return ws.tiled_layout
+end
+
+-- Record the visible workspace's layout under the current view. If the algorithm still
+-- matches what we recorded, keep the recorded options (orientation); if something else
+-- changed it (Omarchy's own toggle), record the bare algorithm.
+local function remember_layout(monname)
+  local cur = current_layout(monname)
+  if not cur then return end
+  layouts[monname] = layouts[monname] or {}
+  local key = layout_key(view[monname])
+  local rec = layouts[monname][key]
+  if not rec or rec.layout ~= cur then
+    layouts[monname][key] = { layout = cur }
+  end
+end
+
+-- Apply a layout record to the monitor's visible workspace via the same workspace rule
+-- Omarchy's toggle uses; it takes effect on the live workspace.
+local function apply_layout(monname, L)
+  local p = pairs_by_mon[monname]
+  if not p or not L then return end
+  local spec = { workspace = tostring(p.vis), layout = L.layout }
+  if L.opts and next(L.opts) then spec.layout_opts = L.opts end
+  local ok, err = pcall(hl.workspace_rule, spec)
+  if not ok then log("workspace_rule for layout failed: %s", tostring(err)) return end
+  -- master orientation only re-arranges on a live nudge, and layoutmsg acts on the
+  -- focused monitor's workspace
+  local o = L.opts and L.opts.orientation
+  if L.layout == "master" and o and active_monname() == monname then
+    dispatch(hl.dsp.layout("orientation" .. tostring(o)))
+  end
+end
+
+local function apply_view_layout(monname)
+  local rec = layouts[monname] and layouts[monname][layout_key(view[monname])]
+  if rec then apply_layout(monname, rec) end
+end
+
+-- Seed from Omarchy's per-workspace files: workspace n's rule becomes tag n's layout,
+-- for tags that have no record yet.
+local function seed_layouts_from_omarchy(monname)
+  layouts[monname] = layouts[monname] or {}
+  for n = 1, cfg.ntags do
+    local key = tostring(n)
+    if not layouts[monname][key] then
+      local f = io.open(cfg.omarchy_layouts_dir .. "/" .. n .. ".lua", "r")
+      if f then
+        local text = f:read("*a") or ""
+        f:close()
+        local layout = text:match('layout%s*=%s*"([%w_]+)"')
+        if layout then
+          local rec = { layout = layout }
+          local orient = text:match('orientation%s*=%s*"([%w_]+)"')
+          if orient then rec.opts = { orientation = orient } end
+          layouts[monname][key] = rec
+        end
+      end
+    end
+  end
+end
+
 -- Remember which window to come back to for the current view of a monitor.
 local function remember_focus(monname)
   local p = pairs_by_mon[monname]
@@ -658,9 +776,11 @@ local function set_view(monname, newset, opts)
     return
   end
   remember_focus(monname)
+  remember_layout(monname)
   prev[monname] = set_copy(cur)
   view[monname] = set_copy(newset)
   local remembered = lastfocus[monname] and lastfocus[monname][view_key(newset)]
+  apply_view_layout(monname)
   save_state()
   reconcile(monname, { old_view = cur, prefer = (opts and opts.prefer) or remembered })
 end
@@ -870,6 +990,38 @@ function M.tagmon(dir)
   reconcile(target, { focus = false })
 end
 
+-- Set the current view's layout: set_layout("master", { orientation = "center" }).
+function M.set_layout(layout, opts, monname)
+  monname = resolve_mon(monname)
+  if not monname or not layout then return end
+  layouts[monname] = layouts[monname] or {}
+  local rec = { layout = layout, opts = opts }
+  layouts[monname][layout_key(view[monname])] = rec
+  apply_layout(monname, rec)
+  save_state()
+  hl.exec_cmd("omarchy-notification-send -g 󱂬 " .. string.format("%q", "Layout: " .. layout_label(rec)))
+end
+
+-- Walk cfg.layouts forwards or backwards from the current view's layout.
+function M.cycle_layout(dir, monname)
+  monname = resolve_mon(monname)
+  if not monname then return end
+  dir = dir or 1
+  local key = layout_key(view[monname])
+  local rec = layouts[monname] and layouts[monname][key]
+  local cur = current_layout(monname)
+  if not rec or (cur and rec.layout ~= cur) then rec = { layout = cur or "dwindle" } end
+  local idx = 1
+  for i, e in ipairs(cfg.layouts) do if layout_equal(e, rec) then idx = i end end
+  if not layout_equal(cfg.layouts[idx], rec) then
+    -- bare algorithm with unknown options: match on the name
+    for i, e in ipairs(cfg.layouts) do if e.layout == rec.layout then idx = i break end end
+  end
+  local n = #cfg.layouts
+  local nxt = cfg.layouts[((idx - 1 + dir) % n) + 1]
+  M.set_layout(nxt.layout, nxt.opts, monname)
+end
+
 function M.emit() emit_all() end
 
 function M.relayout(monname)
@@ -891,6 +1043,10 @@ function M.debug()
     lines[#lines + 1] = string.format("  %s ws=%s class=%s tags={%s} pos=%s urgent=%s", tostring(w.address),
       tostring(ws_id(w)), tostring(w.class), table.concat(sorted_keys(members), ","), pos_string(pos) or "-",
       tostring(urgent[w.address] or false))
+  end
+  lines[#lines + 1] = "layouts:"
+  for name, tbl in pairs(layouts) do
+    for key, rec in pairs(tbl) do lines[#lines + 1] = string.format("  %s tag %s -> %s", name, key, layout_label(rec)) end
   end
   lines[#lines + 1] = "focus memory:"
   for name, tbl in pairs(lastfocus) do
@@ -1195,6 +1351,12 @@ local function setup_events()
     end
   end))
 
+  -- Omarchy's default/hypr/workspace-layouts.lua re-applies its per-workspace rules after
+  -- our module ran; put the current view's layout back once the reload is complete.
+  hl.on("config.reloaded", guard("config.reloaded", function()
+    for name in pairs(pairs_by_mon) do apply_view_layout(name) end
+  end))
+
   hl.on("monitor.added", guard("monitor.added", function(m)
     if not m then return end
     local name = m.name
@@ -1292,6 +1454,15 @@ local function init()
   slots = st.slots or {}
   local saved_view = st.view or {}
   local saved_prev = st.prev or {}
+  layouts = {}
+  for name, tbl in pairs(st.layout or {}) do
+    layouts[name] = {}
+    for key, rec in pairs(tbl) do
+      if type(rec) == "table" and rec.layout then
+        layouts[name][key] = { layout = rec.layout, opts = (rec.opts and next(rec.opts)) and rec.opts or nil }
+      end
+    end
+  end
   lastfocus = {}
   for name, tbl in pairs(st.focus or {}) do
     for key, addr in pairs(tbl) do
@@ -1336,6 +1507,8 @@ local function init()
   load_keys()
 
   for _, m in ipairs(monitors) do
+    seed_layouts_from_omarchy(m.name)
+    apply_view_layout(m.name)
     reconcile(m.name, { focus = false })
     local p = pairs_by_mon[m.name]
     local mm = monitor_by_name(m.name)

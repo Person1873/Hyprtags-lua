@@ -23,6 +23,9 @@ can tell design intent from generated implementation, and what has actually been
   to a merge blocker), and the decision to work through the remaining review items.
 - The bar replaces `omarchy.workspaces`, looks like it, hides empty tags, keeps dwm buttons.
 - Publish as an Omarchy plugin under the MIT licence.
+- Per-tag layouts, prompted by the human asking what the "workspaces 1..99 stay free" claim
+  was missing (their dwm build had PERTAG); the lowest-tag rule for combined views was the
+  AI's answer to the human's question about what a combo would select.
 
 ## AI-generated (implementation and analysis)
 
@@ -48,7 +51,9 @@ Tested live on one laptop (Omarchy 4.0.2, Hyprland 0.56.2, Quickshell 0.3.1): ad
 rank snapshot and restoration after a swap, hidden-workspace bounce, adoption from numbered
 workspaces, scratchpad round trip, view survival across `hyprctl reload`, digit combos with
 modifier release, focus memory, stray adoption, F-key tags, SUPER+0 toggle, the default
-browser and mail keys revealing hidden windows, the finder's listing.
+browser and mail keys revealing hidden windows, the finder's listing, per-tag layouts
+(seeding from Omarchy's files, switching, cycling, combined views taking the lowest tag's
+layout).
 
 Not tested: anything with a second monitor (pair 201/202, `tagmon`, monitor removal, the
 move-workspace-to-monitor bounce), the shipped Omarchy-flavoured keys module loaded live,
