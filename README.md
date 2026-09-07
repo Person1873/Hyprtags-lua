@@ -32,8 +32,10 @@ generated, and what has and has not been tested.
   re-applied on every view change, with the same `hl.workspace_rule` call Omarchy's own
   toggle uses. A combined view uses its lowest tag's slot; the all-tags view has a slot of
   its own. `hyprtags.cycle_layout(±1)` walks `cfg.layouts` (dwindle, master, centre master,
-  scrolling by default), `hyprtags.set_layout("master", { orientation = "center" })` sets
-  one directly. Existing Omarchy `workspace-layouts/<n>.lua` files seed tag *n* once.
+  monocle, scrolling by default), `hyprtags.set_layout("master", { orientation = "center" })`
+  sets one directly, `toggle_layout()` flips to the slot's previous layout,
+  `rotate_layout_axis(±1)` and `mirror_layout()` turn a master layout, `toggle_gaps()` zeroes
+  and restores the gaps. Existing Omarchy `workspace-layouts/<n>.lua` files seed tag *n* once.
 - **Focus comes back where you left it.** The focused window is remembered per view (per
   monitor) and refocused when that view returns, dwm/pertag style.
 - **Self-protecting.** Every keybind is registered per chord, so one failing bind cannot take
@@ -116,12 +118,18 @@ failures) and `hyprtags.unbind(keys)`. Two maps ship:
 | `SUPER + SHIFT + S` | sticky (pin) |
 | `SUPER + CTRL + LEFT/RIGHT` | shift window and view to the previous/next tag |
 | `SUPER + SHIFT + , / .` | send window to the previous/next monitor (takes that monitor's view) |
+| `SUPER + SHIFT + T / M / C` | layout for this tag: master (dwm tile) / monocle / scrolling (dwm columns) |
+| `SUPER + SHIFT + SPACE` | previous layout for this tag (dwm `setlayout` toggle) |
+| `SUPER + CTRL + T`, `SUPER + CTRL + RETURN` | rotate the master orientation / mirror master and stack |
+| `SUPER + CTRL + J / K` | roll the master stack forward / backward |
+| `SUPER + ALT + 0` | toggle gaps |
 
 Public functions for your own map: `view(tags, mon?)`, `toggleview(k)`, `tag(tags, w?)`,
 `toggletag(k, w?)`, `view_all()`, `tag_all()`, `view_previous()`, `view_next(±1)`,
 `comboview(k)`, `combotag(k)`, `combo_enable("SUPER")`, `focusurgent()`, `winview()`,
 `sticky()`, `shiftboth(±1)`, `shiftview(±1)`, `tagmon(±1)`, `cycle_layout(±1)`,
-`set_layout(name, opts)`.
+`set_layout(name, opts)`, `toggle_layout()`, `rotate_layout_axis(±1)`, `mirror_layout()`,
+`toggle_gaps()`.
 
 Bar widget: left click = view, right click = toggle into view, **Ctrl** + left = tag the
 focused window, **Ctrl** + right = toggle the tag on it. (SUPER + mouse is consumed by

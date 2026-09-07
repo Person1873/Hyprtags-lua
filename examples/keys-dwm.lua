@@ -47,3 +47,20 @@ T.rebind("SUPER + CTRL + LEFT", function() T.shiftboth(-1) end, "Shift window an
 T.rebind("SUPER + CTRL + RIGHT", function() T.shiftboth(1) end, "Shift window and view to next tag")
 T.rebind("SUPER + SHIFT + comma", function() T.tagmon(-1) end, "Send window to previous monitor")
 T.rebind("SUPER + SHIFT + period", function() T.tagmon(1) end, "Send window to next monitor")
+
+-- Layouts, from the dwm layouts[] slots and their keys. Slot 0 tile → master, slot 2
+-- monocle → monocle, slot 3 columns → scrolling; slot 1 (floating "layout") has no
+-- Hyprland equivalent, so SUPER+SHIFT+Y keeps Omarchy's YouTube. Per-tag memory and the
+-- notification live in the engine. Displaced: Music (SHIFT+M), Calendar (SHIFT+C),
+-- Activity (CTRL+T), Herdr (CTRL+RETURN → moved to CTRL+ALT+RETURN), Herdr keybindings
+-- (CTRL+K), and the personal "swap with master" on SHIFT+SPACE (zoom is SHIFT+RETURN).
+T.rebind("SUPER + SHIFT + T", function() T.set_layout("master", { orientation = "left" }) end, "Layout: master (tile)")
+T.rebind("SUPER + SHIFT + M", function() T.set_layout("monocle") end, "Layout: monocle")
+T.rebind("SUPER + SHIFT + C", function() T.set_layout("scrolling") end, "Layout: scrolling (columns)")
+T.rebind("SUPER + SHIFT + SPACE", function() T.toggle_layout() end, "Layout: previous")
+T.rebind("SUPER + CTRL + T", function() T.rotate_layout_axis(1) end, "Rotate master orientation")
+T.rebind("SUPER + CTRL + RETURN", function() T.mirror_layout() end, "Mirror master and stack")
+hl.bind("SUPER + CTRL + ALT + RETURN", hl.dsp.exec_cmd("omarchy-launch-terminal-herdr"), { description = "Herdr" })
+T.rebind("SUPER + CTRL + J", function() hl.dispatch(hl.dsp.layout("rollnext")) end, "Roll stack forward")
+T.rebind("SUPER + CTRL + K", function() hl.dispatch(hl.dsp.layout("rollprev")) end, "Roll stack backward")
+T.rebind("SUPER + ALT + code:19", function() T.toggle_gaps() end, "Toggle gaps")

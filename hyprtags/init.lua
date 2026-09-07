@@ -45,6 +45,7 @@ local cfg = {
     { layout = "dwindle" },
     { layout = "master", opts = { orientation = "left" } },
     { layout = "master", opts = { orientation = "center" }, name = "centre master" },
+    { layout = "monocle" },
     { layout = "scrolling" },
   },
   -- Seed per-tag layouts once from Omarchy's per-workspace files (workspace n -> tag n).
@@ -68,7 +69,9 @@ local emit_timer = nil
 local combo = { active = false, timer = nil }
 local log_lines = {}
 local lastfocus = {}      -- monname -> { [viewkey] = address }  (address of the window to refocus)
-local layouts = {}        -- monname -> { [viewkey] = { layout = name, opts = {...}|nil } }
+local layouts = {}        -- monname -> { [slot] = { layout = name, opts = {...}|nil } }
+local prev_layout = {}    -- monname -> { [slot] = previous record }  (dwm setlayout toggle)
+local gaps_saved = nil    -- { gaps_in, gaps_out } while gaps are toggled off
 local pending = {}        -- monname -> true while a deferred reconcile is queued
 local bounce_block = {}   -- ws id -> true while a move_to_monitor bounce is cooling down
 local bounce_disabled = false
@@ -995,8 +998,14 @@ function M.set_layout(layout, opts, monname)
   monname = resolve_mon(monname)
   if not monname or not layout then return end
   layouts[monname] = layouts[monname] or {}
+  local slot = layout_key(view[monname])
+  local old = layouts[monname][slot]
   local rec = { layout = layout, opts = opts }
-  layouts[monname][layout_key(view[monname])] = rec
+  if old and not layout_equal(old, rec) then
+    prev_layout[monname] = prev_layout[monname] or {}
+    prev_layout[monname][slot] = old
+  end
+  layouts[monname][slot] = rec
   apply_layout(monname, rec)
   save_state()
   hl.exec_cmd("omarchy-notification-send -g 󱂬 " .. string.format("%q", "Layout: " .. layout_label(rec)))
@@ -1020,6 +1029,58 @@ function M.cycle_layout(dir, monname)
   local n = #cfg.layouts
   local nxt = cfg.layouts[((idx - 1 + dir) % n) + 1]
   M.set_layout(nxt.layout, nxt.opts, monname)
+end
+
+-- dwm setlayout({0}): flip between this slot's current and previous layout.
+function M.toggle_layout(monname)
+  monname = resolve_mon(monname)
+  if not monname then return end
+  local slot = layout_key(view[monname])
+  local p = prev_layout[monname] and prev_layout[monname][slot]
+  if not p then M.cycle_layout(1, monname) return end
+  M.set_layout(p.layout, p.opts, monname)
+end
+
+local ORIENTATIONS = { "left", "top", "right", "bottom", "center" }
+
+local function master_orientation(monname)
+  local rec = layouts[monname] and layouts[monname][layout_key(view[monname])]
+  if rec and rec.layout == "master" then return (rec.opts and rec.opts.orientation) or "left" end
+  return nil
+end
+
+-- dwm rotatelayoutaxis: turn the master area around (left → top → right → bottom → center).
+-- Only meaningful on a master slot; other layouts are left alone.
+function M.rotate_layout_axis(dir, monname)
+  monname = resolve_mon(monname)
+  local o = monname and master_orientation(monname)
+  if not o then return end
+  local idx = 1
+  for i, v in ipairs(ORIENTATIONS) do if v == o then idx = i end end
+  local n = #ORIENTATIONS
+  M.set_layout("master", { orientation = ORIENTATIONS[((idx - 1 + (dir or 1)) % n) + 1] }, monname)
+end
+
+-- dwm mirrorlayout: swap master and stack sides.
+function M.mirror_layout(monname)
+  monname = resolve_mon(monname)
+  local o = monname and master_orientation(monname)
+  if not o then return end
+  local mirror = { left = "right", right = "left", top = "bottom", bottom = "top", center = "center" }
+  M.set_layout("master", { orientation = mirror[o] }, monname)
+end
+
+-- dwm togglegaps: zero the gaps, restore them on the next call.
+function M.toggle_gaps()
+  if gaps_saved then
+    hl.config({ general = { gaps_in = gaps_saved[1], gaps_out = gaps_saved[2] } })
+    gaps_saved = nil
+  else
+    local gi = hl.get_config("general.gaps_in")
+    local go = hl.get_config("general.gaps_out")
+    gaps_saved = { gi, go }
+    hl.config({ general = { gaps_in = 0, gaps_out = 0 } })
+  end
 end
 
 function M.emit() emit_all() end

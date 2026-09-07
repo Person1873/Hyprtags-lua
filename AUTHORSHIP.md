@@ -25,7 +25,10 @@ can tell design intent from generated implementation, and what has actually been
 - Publish as an Omarchy plugin under the MIT licence.
 - Per-tag layouts, prompted by the human asking what the "workspaces 1..99 stay free" claim
   was missing (their dwm build had PERTAG); the lowest-tag rule for combined views was the
-  AI's answer to the human's question about what a combo would select.
+  AI's answer to the human's question about what a combo would select. The layout keys
+  (tile/monocle/columns slots, previous-layout toggle, axis rotate, mirror, stack roll,
+  gaps toggle) come from the human's dwm `layouts[]` table and key list; the mapping of
+  dwm's flextile slots onto Hyprland's master/monocle/scrolling is the AI's.
 
 ## AI-generated (implementation and analysis)
 
@@ -53,7 +56,7 @@ workspaces, scratchpad round trip, view survival across `hyprctl reload`, digit 
 modifier release, focus memory, stray adoption, F-key tags, SUPER+0 toggle, the default
 browser and mail keys revealing hidden windows, the finder's listing, per-tag layouts
 (seeding from Omarchy's files, switching, cycling, combined views taking the lowest tag's
-layout).
+layout), the layout keys (set, toggle back, rotate, mirror, gaps).
 
 Not tested: anything with a second monitor (pair 201/202, `tagmon`, monitor removal, the
 move-workspace-to-monitor bounce), the shipped Omarchy-flavoured keys module loaded live,
