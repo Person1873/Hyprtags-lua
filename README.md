@@ -1,8 +1,8 @@
 # hypr-dwm-land
 
 Tags instead of workspaces for Hyprland, the way dwm does it. A Lua module for Hyprland's
-Lua config, plus a bar widget and installer for the Omarchy shell. No compiled code. The
-module itself needs only Hyprland; see [Without Omarchy](#without-omarchy).
+Lua config, plus a bar widget for the Omarchy shell. No compiled code. The module itself
+needs only Hyprland; see [Without Omarchy](#without-omarchy).
 
 ![the bar widget showing tags 1, 2 and 4](preview.png)
 
@@ -29,10 +29,25 @@ only the tags that have windows, plus whatever you are viewing.
 
 ## Quick start
 
+Three Omarchy commands put the widget where the workspace numbers were:
+
 ```sh
 omarchy plugin add https://github.com/Person1873/hypr-dwm-land.git --enable
-~/.config/omarchy/plugins/person1873.hypr-dwm-land/install.sh
+omarchy bar put person1873.hypr-dwm-land --after omarchy.menu
+omarchy plugin disable omarchy.workspaces
 ```
+
+Then three lines at the end of `~/.config/hypr/hyprland.lua`, after your own keybindings,
+so the keys module's unbinds win:
+
+```lua
+local hdl = os.getenv("HOME") .. "/.config/omarchy/plugins/person1873.hypr-dwm-land"
+package.path = hdl .. "/?.lua;" .. hdl .. "/?/init.lua;" .. package.path
+require("hyprdwmland").setup({})
+```
+
+`hyprctl reload`, then `hyprctl configerrors` should print nothing. Nothing edits your
+config for you and nothing runs on plugin load.
 
 Then, with the default key map (Omarchy's own chords; the dwm map below differs, notably
 `SUPER + TAB`):
@@ -45,8 +60,8 @@ Then, with the default key map (Omarchy's own chords; the dwm map below differs,
 | `SUPER + CTRL + SHIFT + 3` | also give the focused window tag 3 |
 | `SUPER + TAB` | next tag that has windows |
 
-The full maps are under [Keys](#keys). `install.sh` explains what it changes under
-[What install.sh touches](#what-installsh-touches), and `uninstall.sh` reverses it.
+The full maps are under [Keys](#keys); what the module writes at run time is under
+[What it touches](#what-it-touches); [Removing](#removing) undoes everything.
 
 ## How it works
 
@@ -253,34 +268,16 @@ run here. The Omarchy widget in `shell/Tags.qml` is the reference consumer.
 | `combo_timeout` | `1000` | ms fallback for ending a held-modifier combo |
 | `emit_delay` | `30` | ms debounce for bar updates |
 
-## What install.sh touches
+## What it touches
 
-Nothing runs on plugin load. `install.sh` is an explicit action and does, once each, with a
-timestamped backup beside every file it edits:
+Nothing runs on plugin load, and the module edits no configuration: the `hyprland.lua`
+lines are yours, and the bar layout is changed by Omarchy's own commands in the quick
+start.
 
-1. From a development checkout, copies the tree into
-   `~/.config/omarchy/plugins/person1873.hypr-dwm-land/` (Omarchy refuses symlinked plugin
-   folders). After `omarchy plugin add` the checkout already is that folder.
-2. In `~/.config/omarchy/shell.json`, replaces `omarchy.workspaces` with this widget in the
-   bar layout and registers the plugin.
-3. Appends one marked block to `~/.config/hypr/hyprland.lua`:
-
-   ```lua
-   -- BEGIN hypr-dwm-land (managed by person1873.hypr-dwm-land/install.sh; remove with uninstall.sh)
-   package.path = "<plugin dir>/?.lua;<plugin dir>/?/init.lua;" .. package.path
-   require("hyprdwmland").setup({})
-   -- END hypr-dwm-land
-   ```
-
-   It refuses if a marker is already present. Because this runs after Omarchy's defaults and
-   your own `hypr/bindings.lua`, the keys module's unbinds win.
-4. Runs `hyprctl reload`. If `hyprctl configerrors` reports anything, `hyprland.lua` is put
-   back to its exact prior bytes and the script exits non-zero. Then restarts the shell.
-
-Files the module writes at run time, all under `~/.local/state/hypr-dwm-land/`: `state`, a
-passive line-format file (per-monitor workspace slot, current and previous view, focused
-window per view, layout per tag) that is parsed with anchored patterns and never executed;
-and `debug.txt` on request. No network access, no daemons, no other files.
+At run time it writes only under `~/.local/state/hypr-dwm-land/`: `state`, a passive
+line-format file (per-monitor workspace slot, current and previous view, focused window per
+view, layout per tag) that is parsed with anchored patterns and never executed; and
+`debug.txt` on request. No network access, no daemons, no other files.
 No sudo or pkexec is required.
 
 Window tags themselves live in the compositor and vanish when Hyprland exits.
@@ -288,22 +285,21 @@ Window tags themselves live in the compositor and vanish when Hyprland exits.
 ## Removing
 
 ```sh
-~/.config/omarchy/plugins/person1873.hypr-dwm-land/uninstall.sh   # config edits reversed
-omarchy plugin remove person1873.hypr-dwm-land                    # the plugin folder
+hyprctl eval 'hyprdwmland.uninstall()'          # windows to workspaces numbered by tag
+# delete the three hyprdwmland lines from ~/.config/hypr/hyprland.lua, then:
+hyprctl reload
+omarchy plugin disable person1873.hypr-dwm-land
+omarchy plugin enable omarchy.workspaces --section left
+omarchy plugin remove person1873.hypr-dwm-land
 ```
 
-`uninstall.sh` removes only the marked block from `hyprland.lua` (and refuses if the
-markers are missing, duplicated or out of order), puts `omarchy.workspaces` back in
-`shell.json`, then reloads Hyprland and restarts the shell. Backups are made first.
+`hyprdwmland.uninstall()` hands windows back as if tags had been workspaces all along:
+each goes to the workspace numbered like its lowest tag (tags above 10 go to workspace 1,
+since Omarchy's keys stop there), its tags are stripped, and the workspace matching your
+current view is focused. Scratchpad windows stay in the scratchpad. Skip that line to leave
+windows on 101/102 with their tags instead.
 
-Open windows are handed back as if tags had been workspaces all along: each goes to the
-workspace numbered like its lowest tag (tags above 10 go to workspace 1, since Omarchy's
-keys stop there), its tags are stripped, and the workspace matching your current view is
-focused. Scratchpad windows stay in the scratchpad. `--keep-windows` skips this and leaves
-windows on 101/102 with their tags.
-
-What survives: `~/.local/state/hypr-dwm-land/` (add `--purge-state` to delete it) and the
-`*.bak.<timestamp>` backups. Nothing else is left behind.
+What survives: `~/.local/state/hypr-dwm-land/`, which you may delete. Nothing else.
 
 ## Verifying an install
 
@@ -398,5 +394,4 @@ hyprdwmland/keys.lua        default keys: Omarchy's chords on tags
 examples/keys-dwm.lua       the author's dwm-style keys, for ~/.config/hypr/hypr-dwm-land-keys.lua
 examples/waybar-tags.sh     the bar protocol turned into waybar custom-module JSON
 bin/hypr-dwm-land-windows   lost-window finder on omarchy-menu-select (--list to print)
-install.sh / uninstall.sh   the config edits, and their exact reversal
 ```

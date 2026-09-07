@@ -98,6 +98,15 @@ else; the widget, installer and finder are the Omarchy layer. The README gained 
 `examples/waybar-tags.sh` shows the protocol consumed by a different bar. That script's
 parsing was run against the live socket; waybar itself was not installed to try it.
 
+## No installer
+
+The human asked why the marketplace baseline reported an `installer` capability when the
+plugin is "just a require". Answer: the scanner flags any file named install/setup/
+uninstall, and the two scripts were the only thing keeping the baseline from `passed`.
+Omarchy's own CLI (`plugin add --enable`, `bar put`, `plugin disable`) does the widget
+placement, so the scripts were removed and the README now gives the three commands and the
+three `hyprland.lua` lines instead. The engine still edits nothing.
+
 ## What is borrowed
 
 The tag model, operation names and the behaviour of the pertag, combo, hidevacanttags,
