@@ -23,8 +23,10 @@ generated, and what has and has not been tested.
   you do on tag 3 cannot rearrange tag 5.
 - **The view** is a set of tags per monitor. `reconcile()` moves windows between the pair
   with `hl.dsp.window.move({ follow = false, window = … })` so nothing else changes.
-- **New windows** take the current view's tags. A window that an Omarchy rule sends to
-  workspace *N* (e.g. `o.window("qemu", { workspace = "5" })`) is adopted as tag *N*.
+- **Where a new window lands.** Without a rule, it goes on the tags you are viewing at the
+  moment it opens, as in dwm. If an Omarchy window rule assigns it a workspace, e.g.
+  `o.window("qemu", { workspace = "5" })`, it goes on tag 5 instead, whether or not tag 5 is
+  in view: on screen if it is, parked on tag 5 if not. Workspace 5 itself never persists.
 - **Nothing stays untagged.** Any mapped window outside the scratchpad that carries no tag is
   given tag 1 (`stray_tag`) and moved into the pair, checked after every change and on a 2 s
   sweep, so a window can never sit on a workspace the keys cannot reach.
