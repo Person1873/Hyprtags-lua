@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Lost-window finder for Hyprtags: list every window with its tags, pick one in the Omarchy
+# menu, focus it. Focusing a hidden window makes hyprtags reveal its tag; focusing a
+# scratchpad window shows the scratchpad.
+#
+#   hyprtags-windows          open the picker
+#   hyprtags-windows --list   print the lines it would offer (for scripting / testing)
+set -euo pipefail
+
+lines=$(hyprctl clients -j | jq -r '
+  def tags: [.tags[] | select(test("^WMT[0-9]+$")) | sub("^WMT"; "")] | sort_by(tonumber) | join(",");
+  .[] | select(.mapped)
+  | (if .workspace.id < 0 then "S" elif (tags | length) > 0 then tags else "-" end) as $where
+  | "\($where)\t\(.class)\t\(.title)\t\(.address)"' | sort -t$'\t' -k1,1V -k2,2)
+
+[[ -n $lines ]] || exit 0
+
+if [[ ${1:-} == "--list" ]]; then
+  printf '%s\n' "$lines" | awk -F'\t' '{printf "[%s]  %s  ·  %s\n", $1, $2, $3}'
+  exit 0
+fi
+
+# Present "[tags]  class  ·  title"; keep the address on the side to resolve the pick.
+declare -A addr_of
+options=()
+while IFS=$'\t' read -r where class title address; do
+  label="[$where]  $class  ·  $title"
+  # duplicate labels (two identical terminals) still need distinct picks
+  n=1; base=$label
+  while [[ -n ${addr_of[$label]:-} ]]; do n=$((n + 1)); label="$base ($n)"; done
+  addr_of[$label]=$address
+  options+=("$label")
+done <<<"$lines"
+
+choice=$(printf '%s\n' "${options[@]}" | omarchy-menu-select "Windows" -- --width 720 --maxheight 480) || exit 0
+address=${addr_of[$choice]:-}
+[[ -n $address ]] || exit 0
+hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
