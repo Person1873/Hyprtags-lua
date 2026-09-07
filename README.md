@@ -58,7 +58,13 @@ workspace is 101 on the first monitor, 201 on the second, and so on; the parking
 102, 202 … Ordinary workspaces 1..99 are left alone. The parking lot runs the monocle
 layout, so a parked window is always sized to the full monitor rather than to an
 ever-smaller tile; size-sensitive clients see one full-size resize on the way out and one
-tile-size resize on the way back, never a sliver.
+tile-size resize on the way back, never a sliver. Floating windows are never laid out, so
+they keep their exact position and size through any number of view changes (verified). If a
+tiled application genuinely cannot survive being resized, give it an Omarchy float rule
+(`o.window("<class>", { float = true })`) and it is out of the layout's hands everywhere,
+not only while parked. Parking windows as floating automatically was considered and
+rejected: it would still resize them, only to less predictable sizes, and would leave
+windows floating if a reload interrupted a round trip.
 
 **Tags are Hyprland window tags.** Hyprland lets any window carry named tags. A window on
 tags 3 and 5 carries `WMT3` and `WMT5`. Because these are plain names, Hyprland's own window
