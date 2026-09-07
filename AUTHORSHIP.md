@@ -48,6 +48,13 @@ can tell design intent from generated implementation, and what has actually been
   desktop entry.
 - The senior-dev style review of the code and the list of ordering hazards.
 
+## What is borrowed
+
+Design only. The tag model, operation names and the behaviour of the pertag, combo,
+hidevacanttags, winview, shiftboth, focusurgent and tagmon patches come from dwm and its
+patch ecosystem, reimplemented from their documented behaviour. No dwm code was read into
+this project or translated; see "Prior art and credit" in the README.
+
 ## Tested versus untested (as of the first public push)
 
 Tested live on one laptop (Omarchy 4.0.2, Hyprland 0.56.2, Quickshell 0.3.1): adoption,
