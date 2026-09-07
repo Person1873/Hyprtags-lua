@@ -71,6 +71,7 @@ local log_lines = {}
 local lastfocus = {}      -- monname -> { [viewkey] = address }  (address of the window to refocus)
 local layouts = {}        -- monname -> { [slot] = { layout = name, opts = {...}|nil } }
 local prev_layout = {}    -- monname -> { [slot] = previous record }  (dwm setlayout toggle)
+local layout_settling = {} -- monname -> true while a workspace_rule we issued is taking effect
 local gaps_saved = nil    -- { gaps_in, gaps_out } while gaps are toggled off
 local pending = {}        -- monname -> true while a deferred reconcile is queued
 local bounce_block = {}   -- ws id -> true while a move_to_monitor bounce is cooling down
@@ -568,6 +569,11 @@ end
 -- matches what we recorded, keep the recorded options (orientation); if something else
 -- changed it (Omarchy's own toggle), record the bare algorithm.
 local function remember_layout(monname)
+  -- A workspace rule changes the live layout asynchronously (verified: still the old
+  -- algorithm right after the call, new one ~300 ms later). While one of ours is settling,
+  -- the compositor's answer is transient; recording it would attach the wrong layout to
+  -- the tag being left on a fast switch.
+  if layout_settling[monname] then return end
   local cur = current_layout(monname)
   if not cur then return end
   layouts[monname] = layouts[monname] or {}
@@ -587,12 +593,17 @@ local function apply_layout(monname, L)
   if L.opts and next(L.opts) then spec.layout_opts = L.opts end
   local ok, err = pcall(hl.workspace_rule, spec)
   if not ok then log("workspace_rule for layout failed: %s", tostring(err)) return end
-  -- master orientation only re-arranges on a live nudge, and layoutmsg acts on the
-  -- focused monitor's workspace
+  layout_settling[monname] = true
+  -- Master orientation only re-arranges on a live layoutmsg, which must reach the master
+  -- algorithm: sent too early it hits the outgoing layout ("unknown dwindle layout
+  -- message"). Wait for the rule to land, check, then nudge the focused monitor only.
   local o = L.opts and L.opts.orientation
-  if L.layout == "master" and o and active_monname() == monname then
-    dispatch(hl.dsp.layout("orientation" .. tostring(o)))
-  end
+  hl.timer(guard("layout nudge", function()
+    layout_settling[monname] = nil
+    if L.layout == "master" and o and active_monname() == monname and current_layout(monname) == "master" then
+      dispatch(hl.dsp.layout("orientation" .. tostring(o)))
+    end
+  end), { timeout = 400, type = "oneshot" })
 end
 
 local function apply_view_layout(monname)
