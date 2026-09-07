@@ -77,6 +77,18 @@ the AI found `JoaoCostaIFG/hyprtags`, an active C++ Hyprland plugin with the sam
 Lua API even lives at `hl.plugin.hyprtags.*`. The human raised the collision. The Lua
 identifier is `hyprdwmland` because Lua names cannot carry dashes.
 
+## A verification failure, recorded
+
+The cursor-warp fix (2026-09-08) introduced `focus_window` above the helper it calls, so
+inside Hyprland's Lua state the helper resolved as a nil global and every view change
+aborted at its first focus call. The error was caught by `reconcile`'s `pcall` and logged
+as "reconcile failed", which the AI's test harness never counted (it grepped for "ERROR").
+The cursor test therefore "passed" because no focus happened at all, and later placement
+tests passed because placement was unaffected. Found on a full read of the code the human
+asked for before submission, confirmed from the log, fixed, and re-tested with focus and
+cursor position checked together. Lesson recorded: a test that checks one side effect
+cannot vouch for the operation that produces it.
+
 ## What is borrowed
 
 The tag model, operation names and the behaviour of the pertag, combo, hidevacanttags,

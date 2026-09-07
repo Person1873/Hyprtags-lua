@@ -21,7 +21,6 @@ local M = {}
 _G.hyprdwmland = M
 
 local HOME = os.getenv("HOME") or ""
-local unpack = table.unpack or unpack
 
 -- ---------------------------------------------------------------------------------------
 -- Configuration
@@ -129,9 +128,7 @@ local function without_warp(fn)
   if not ok then error(err, 0) end
 end
 
-local function focus_window(w)
-  without_warp(function() dispatch(hl.dsp.focus({ window = wsel(w) })) end)
-end
+local focus_window -- defined after the window helpers it needs
 
 -- ---------------------------------------------------------------------------------------
 -- Small helpers
@@ -192,9 +189,15 @@ local function ws_id(w)
   return ws and ws.id or nil
 end
 
+-- Special workspaces (the scratchpad and any other special:*) are left alone. Named
+-- workspaces also have negative ids but are ordinary; they are adopted like any other.
 local function is_special(w)
   local ws = w.workspace
-  return ws ~= nil and (ws.special or ws.id < 0)
+  return ws ~= nil and ws.special == true
+end
+
+focus_window = function(w)
+  without_warp(function() dispatch(hl.dsp.focus({ window = wsel(w) })) end)
 end
 
 -- ---------------------------------------------------------------------------------------
@@ -322,6 +325,7 @@ local function register_rules(monname, vis, hid)
 end
 
 local save_state -- forward
+local rules_registered = {} -- monname -> true once its pair rules exist in this Lua state
 
 local function ensure_pair(monname)
   local p = pairs_by_mon[monname]
@@ -337,7 +341,10 @@ local function ensure_pair(monname)
   pairs_by_mon[monname] = p
   mon_of_ws[vis] = monname
   mon_of_ws[hid] = monname
-  register_rules(monname, vis, hid)
+  if not rules_registered[monname] then
+    register_rules(monname, vis, hid)
+    rules_registered[monname] = true
+  end
   view[monname] = view[monname] or { [1] = true }
   return p
 end
@@ -640,6 +647,9 @@ local function fix_focus(monname, prefer)
     if pick and pick.address ~= aw.address then focus_window(pick) end
     return
   end
+  -- The scratchpad (or any special workspace) holds focus: a background reconcile must not
+  -- take it away. Only an explicit preference (the user tagged something) may.
+  if aw and is_special(aw) and not pick then return end
   if not pick then
     for _, w in ipairs(cands) do
       if not pick or (w.focus_history_id or 1e9) < (pick.focus_history_id or 1e9) then pick = w end
@@ -647,11 +657,22 @@ local function fix_focus(monname, prefer)
   end
   if pick then
     focus_window(pick)
-  else
-    local m = monitor_by_name(monname)
-    if m and m.active_workspace and m.active_workspace.id ~= p.vis then
+    return
+  end
+  local m = monitor_by_name(monname)
+  local active_id = m and m.active_workspace and m.active_workspace.id
+  if active_id ~= p.vis then
+    dispatch(hl.dsp.focus({ workspace = p.vis }))
+  elseif aw and ws_id(aw) == p.hid then
+    -- The view is empty and the previously focused window was just parked. Hyprland keeps
+    -- keyboard focus on a window moved silently off the active workspace, so keystrokes
+    -- would reach a hidden window. Nothing exposes "focus nothing"; a workspace round trip
+    -- does it (verified: active window becomes none). Runs under `busy`, so the parking
+    -- workspace's bounce handler ignores it.
+    without_warp(function()
+      dispatch(hl.dsp.focus({ workspace = p.hid }))
       dispatch(hl.dsp.focus({ workspace = p.vis }))
-    end
+    end)
   end
 end
 
@@ -918,6 +939,28 @@ end
 -- Operations
 -- ---------------------------------------------------------------------------------------
 
+-- Tag arguments arrive from keys, the bar and `hyprctl eval`; anything that is not an
+-- integer in 1..ntags is refused rather than turned into a nil table index.
+local function tag_number(k)
+  k = tonumber(k)
+  if not k or k ~= math.floor(k) or k < 1 or k > cfg.ntags then return nil end
+  return k
+end
+
+local function tag_set(tags)
+  local s = {}
+  if type(tags) == "table" then
+    for _, k in ipairs(tags) do
+      local n = tag_number(k)
+      if n then s[n] = true end
+    end
+  else
+    local n = tag_number(tags)
+    if n then s[n] = true end
+  end
+  return s
+end
+
 local function resolve_mon(monname)
   if monname and pairs_by_mon[monname] then return monname end
   local a = active_monname()
@@ -1002,14 +1045,15 @@ local function next_focus_after(w)
 end
 
 function M.view(tags, monname)
-  local s = type(tags) == "table" and set_of(tags) or { [tonumber(tags)] = true }
+  local s = tag_set(tags)
+  if set_empty(s) then return end
   set_view(monname, s)
 end
 
 function M.toggleview(k, monname)
   monname = resolve_mon(monname)
-  if not monname then return end
-  k = tonumber(k)
+  k = tag_number(k)
+  if not monname or not k then return end
   local s = set_copy(view[monname])
   if s[k] then s[k] = nil else s[k] = true end
   if set_empty(s) then return end
@@ -1052,21 +1096,30 @@ function M.view_previous(monname)
   set_view(monname, prev[monname])
 end
 
+-- After a membership change: if the window stays on screen it keeps focus; if it is about
+-- to be parked, focus moves to the most recently used remaining window.
+local function focus_after_tagging(w, monname, members)
+  local pulled = pull_from_special(w, monname)
+  if pulled then return pulled end
+  if monname and view[monname] and intersects(members, view[monname]) then return w.address end
+  return next_focus_after(w)
+end
+
 function M.tag(tags, w, monname)
   w = target_window(w)
   if not w then return end
-  local s = type(tags) == "table" and set_of(tags) or { [tonumber(tags)] = true }
+  local s = tag_set(tags)
   if set_empty(s) then return end
   monname = monname_of(w) or resolve_mon(monname)
   assign_tags_group(w, s, monname)
-  local prefer = pull_from_special(w, monname) or next_focus_after(w)
+  local prefer = focus_after_tagging(w, monname, s)
   if monname then reconcile(monname, { prefer = prefer }) end
 end
 
 function M.toggletag(k, w, monname)
   w = target_window(w)
-  if not w then return end
-  k = tonumber(k)
+  k = tag_number(k)
+  if not w or not k then return end
   local members = group_tags(w)
   if members[k] then
     members[k] = nil
@@ -1076,8 +1129,26 @@ function M.toggletag(k, w, monname)
   end
   monname = monname_of(w) or resolve_mon(monname)
   assign_tags_group(w, members, monname)
-  local prefer = pull_from_special(w, monname) or next_focus_after(w)
+  local prefer = focus_after_tagging(w, monname, members)
   if monname then reconcile(monname, { prefer = prefer }) end
+end
+
+-- Omarchy's "move window to workspace n": tag it n and go there, as one reconcile, so the
+-- window does not round-trip through the parking lot.
+function M.tag_and_view(k, w, monname)
+  w = target_window(w)
+  k = tag_number(k)
+  if not w or not k then return end
+  monname = monname_of(w) or resolve_mon(monname)
+  if not monname then return end
+  assign_tags_group(w, { [k] = true }, monname)
+  pull_from_special(w, monname)
+  if set_eq(view[monname], { [k] = true }) then
+    -- view unchanged: set_view would return early, so reconcile here
+    reconcile(monname, { prefer = w.address })
+  else
+    set_view(monname, { [k] = true }, { prefer = w.address })
+  end
 end
 
 function M.tag_all(w) M.tag(sorted_keys(all_tags()), w) end
@@ -1421,7 +1492,8 @@ end
 -- dwm COMBO patch: while the modifier stays held, successive tag keys OR together.
 function M.comboview(k)
   local monname = resolve_mon(nil)
-  if not monname then return end
+  k = tag_number(k)
+  if not monname or not k then return end
   if combo.active then
     local s = set_copy(view[monname])
     s[k] = true
@@ -1434,8 +1506,9 @@ end
 
 function M.combotag(k)
   local w = target_window(nil)
-  if not w then return end
-  local members = read_tags(w)
+  k = tag_number(k)
+  if not w or not k then return end
+  local members = group_tags(w)
   if combo.active and not set_empty(members) then
     members[k] = true
     M.tag(sorted_keys(members), w)
@@ -1745,6 +1818,7 @@ local function init()
   for name in pairs(slots) do
     local vis, hid = pair_ids(slots[name])
     register_rules(name, vis, hid)
+    rules_registered[name] = true
   end
 
   local monitors = hl.get_monitors()

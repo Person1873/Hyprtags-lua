@@ -25,7 +25,7 @@ local T = hyprdwmland
 for k = 1, 10 do
   local key = "code:" .. tostring(k + 9) -- code:10 = "1" ... code:18 = "9", code:19 = "0"
   T.rebind("SUPER + " .. key, function() T.view(k) end, "View tag " .. k)
-  T.rebind("SUPER + SHIFT + " .. key, function() T.tag(k); T.view(k) end, "Move window to tag " .. k)
+  T.rebind("SUPER + SHIFT + " .. key, function() T.tag_and_view(k) end, "Move window to tag " .. k)
   T.rebind("SUPER + SHIFT + ALT + " .. key, function() T.tag(k) end, "Move window silently to tag " .. k)
   T.rebind("SUPER + CTRL + " .. key, function() T.toggleview(k) end, "Toggle view of tag " .. k)
   T.rebind("SUPER + CTRL + SHIFT + " .. key, function() T.toggletag(k) end, "Toggle window tag " .. k)
