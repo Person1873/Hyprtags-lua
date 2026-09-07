@@ -5,14 +5,14 @@ import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 
-// DWM-style tag bar. State comes from the hyprtags Lua module over Hyprland's socket2 as
-//   custom>>hyprtags>><monitor>|v=<viewed>|o=<tag:count,...>|u=<urgent tags>|f=<focused tags>
+// DWM-style tag bar. State comes from the hypr-dwm-land Lua module over Hyprland's socket2 as
+//   custom>>hyprdwmland>><monitor>|v=<viewed>|o=<tag:count,...>|u=<urgent tags>|f=<focused tags>
 // Clicks go back through `hyprctl eval`.
 //   left        view tag        right       toggle tag into the view
 //   ctrl+left   tag window      ctrl+right  toggle window tag
 BarWidget {
   id: root
-  moduleName: "person1873.hyprtags"
+  moduleName: "person1873.hypr-dwm-land"
 
   property int ntags: Number(setting("ntags", 21))
   property string monitorName: ""
@@ -88,7 +88,7 @@ BarWidget {
 
   function request() {
     resolveMonitor()
-    call("hyprtags.emit()")
+    call("hyprdwmland.emit()")
   }
 
   // Monitor name as a Lua string literal. Names come from the compositor, but the string
@@ -104,7 +104,7 @@ BarWidget {
     function onRawEvent(event) {
       if (event.name === "custom") {
         var d = String(event.data)
-        if (d.indexOf("hyprtags>>") === 0) root.apply(d.substring(10))
+        if (d.indexOf("hyprdwmland>>") === 0) root.apply(d.substring("hyprdwmland>>".length))
       } else if (event.name === "configreloaded") {
         retry.restart()
       }
@@ -199,10 +199,10 @@ BarWidget {
           onClicked: function(mouse) {
             var ctrl = (mouse.modifiers & Qt.ControlModifier) !== 0
             var k = cell.modelData
-            if (mouse.button === Qt.LeftButton && !ctrl) root.call("hyprtags.view(" + k + root.monArg() + ")")
-            else if (mouse.button === Qt.RightButton && !ctrl) root.call("hyprtags.toggleview(" + k + root.monArg() + ")")
-            else if (mouse.button === Qt.LeftButton && ctrl) root.call("hyprtags.tag(" + k + ")")
-            else if (mouse.button === Qt.RightButton && ctrl) root.call("hyprtags.toggletag(" + k + ")")
+            if (mouse.button === Qt.LeftButton && !ctrl) root.call("hyprdwmland.view(" + k + root.monArg() + ")")
+            else if (mouse.button === Qt.RightButton && !ctrl) root.call("hyprdwmland.toggleview(" + k + root.monArg() + ")")
+            else if (mouse.button === Qt.LeftButton && ctrl) root.call("hyprdwmland.tag(" + k + ")")
+            else if (mouse.button === Qt.RightButton && ctrl) root.call("hyprdwmland.toggletag(" + k + ")")
           }
         }
       }

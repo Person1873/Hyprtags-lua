@@ -1,12 +1,12 @@
--- Hyprtags keys: the author's personal dwm map, carried over from a dwm-flexipatch build
+-- hypr-dwm-land keys: the author's personal dwm map, carried over from a dwm-flexipatch build
 -- (TAGKEYS with the COMBO patch, F-keys for tags 10..21, view-all toggle, focusurgent,
 -- winview, sticky, shiftboth, tagmon, layout keys). These are one person's bindings, not
 -- what dwm or flexipatch ship; edit to taste.
 --
--- Use: copy to ~/.config/hypr/hyprtags-keys.lua and load with
---   require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })
+-- Use: copy to ~/.config/hypr/hypr-dwm-land-keys.lua and load with
+--   require("hyprdwmland").setup({ keys = "hypr.hypr-dwm-land-keys" })
 --
--- Omarchy chords displaced here (unbound by hyprtags.rebind, one per chord):
+-- Omarchy chords displaced here (unbound by hyprdwmland.rebind, one per chord):
 --   SUPER [+SHIFT[+ALT]] + 1..0        workspace switch / move / silent move
 --   SUPER [+SHIFT|+CTRL] + TAB         next / previous / former workspace
 --   SUPER + mouse_down / mouse_up      scroll workspaces
@@ -14,7 +14,7 @@
 --   SUPER + CTRL + LEFT / RIGHT        group prev / next (SUPER + ALT + TAB still cycles groups)
 --   SUPER + SHIFT + S                  Google Maps web app
 
-local T = hyprtags
+local T = hyprdwmland
 
 local function tagkeys(key, k)
   local label = key:match("^code:") and tostring(k) or (tostring(k) .. " (" .. key .. ")")

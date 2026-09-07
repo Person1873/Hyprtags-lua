@@ -32,15 +32,15 @@ can tell design intent from generated implementation, and what has actually been
 
 ## AI-generated (implementation and analysis)
 
-- All code: `hyprtags/init.lua`, `hyprtags/keys.lua`, `examples/keys-dwm.lua`,
-  `shell/Tags.qml`, `manifest.json`, `bin/hyprtags-windows`, `install.sh`, this README set.
+- All code: `hyprdwmland/init.lua`, `hyprdwmland/keys.lua`, `examples/keys-dwm.lua`,
+  `shell/Tags.qml`, `manifest.json`, `bin/hypr-dwm-land-windows`, `install.sh`, this README set.
 - The API facts the design rests on were checked against Hyprland v0.56.2 source
   (`LuaBindingsDispatchers.cpp`, `LuaBindingsInternal.cpp`, `ConfigActions.cpp`,
   `TagKeeper.cpp`, `EventManager.cpp`, `ConfigManager.cpp`) and Quickshell 0.3.1 source, not
   from memory. Where a claim could not be verified it is marked as such in the README.
 - Engineering choices the human accepted rather than specified: workspace ids 101/102 per
   monitor slot; rank snapshotted at hide time from geometry rather than tracked live
-  (proposed as the simpler of three options); the socket2 `custom>>hyprtags>>…` protocol
+  (proposed as the simpler of three options); the socket2 `custom>>hyprdwmland>>…` protocol
   and its debounce; per-view focus memory; the bounce guard that disables itself; per-chord
   key registration under `pcall`; Ctrl as the bar's click modifier because SUPER+mouse is
   consumed by Omarchy's global drag bind; the `omarchy-menu-select` based window finder;
@@ -69,6 +69,13 @@ the ranks the windows already carry when the layout is monocle; only the cyclic 
 matters there because re-show inserts by rank and focus memory restores the top window)
 differs from the suggested one (snapshot on the roll dispatchers) and was verified live
 with ranks deliberately out of address order.
+
+## Name
+
+Started as "Hyprtags". Renamed to hypr-dwm-land on 2026-09-08, the human's choice, after
+the AI found `JoaoCostaIFG/hyprtags`, an active C++ Hyprland plugin with the same goal whose
+Lua API even lives at `hl.plugin.hyprtags.*`. The human raised the collision. The Lua
+identifier is `hyprdwmland` because Lua names cannot carry dashes.
 
 ## What is borrowed
 

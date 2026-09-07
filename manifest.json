@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "person1873.hyprtags",
-  "name": "Hyprtags",
+  "id": "person1873.hypr-dwm-land",
+  "name": "hypr-dwm-land",
   "version": "0.1.0",
   "author": "Person1873",
   "description": "DWM-style tags for Hyprland (Lua module + bar widget)",

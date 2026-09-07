@@ -1,12 +1,12 @@
--- Hyprtags default keys: Omarchy's own workspace chords, mapped onto tags.
+-- hypr-dwm-land default keys: Omarchy's own workspace chords, mapped onto tags.
 --
--- Loaded by require("hyprtags").setup({}) after the engine is up. To customise, copy this
--- file to ~/.config/hypr/hyprtags-keys.lua, edit it, and load that instead:
---   require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })
+-- Loaded by require("hyprdwmland").setup({}) after the engine is up. To customise, copy this
+-- file to ~/.config/hypr/hypr-dwm-land-keys.lua, edit it, and load that instead:
+--   require("hyprdwmland").setup({ keys = "hypr.hypr-dwm-land-keys" })
 -- The author's personal dwm-style map lives in the repo under examples/keys-dwm.lua.
 --
 -- Every bind on a key fires, so each Omarchy chord being replaced is unbound first;
--- hyprtags.rebind does exactly that, one chord at a time, and reports failures.
+-- hyprdwmland.rebind does exactly that, one chord at a time, and reports failures.
 --
 -- Omarchy default            here
 --   SUPER + n                 switch to workspace n   -> view tag n
@@ -20,7 +20,7 @@
 --   SUPER + CTRL + n          toggle tag n in the view
 --   SUPER + CTRL + SHIFT + n  toggle tag n on the focused window
 
-local T = hyprtags
+local T = hyprdwmland
 
 for k = 1, 10 do
   local key = "code:" .. tostring(k + 9) -- code:10 = "1" ... code:18 = "9", code:19 = "0"

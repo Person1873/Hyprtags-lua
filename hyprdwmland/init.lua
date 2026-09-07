@@ -1,4 +1,4 @@
--- Hyprtags: DWM-style tags for Hyprland's Lua config (Omarchy).
+-- hypr-dwm-land: DWM-style tags for Hyprland's Lua config (Omarchy).
 --
 -- Model
 --   * Per monitor a pair of real workspaces: `vis` (the only one ever focused) and `hid`
@@ -12,13 +12,13 @@
 --
 -- Everything the compositor needs to survive a config reload (tags, workspace placement)
 -- is compositor state; the small remainder (slot per monitor, current/previous view) is
--- in ~/.local/state/hyprtags/state (a passive line format, parsed, never executed).
+-- in ~/.local/state/hypr-dwm-land/state (a passive line format, parsed, never executed).
 --
--- Public surface (also reachable via `hyprctl eval 'hyprtags.view(3)'`): see the `M.*`
+-- Public surface (also reachable via `hyprctl eval 'hyprdwmland.view(3)'`): see the `M.*`
 -- functions near the bottom.
 
 local M = {}
-_G.hyprtags = M
+_G.hyprdwmland = M
 
 local HOME = os.getenv("HOME") or ""
 local unpack = table.unpack or unpack
@@ -29,12 +29,12 @@ local unpack = table.unpack or unpack
 
 local cfg = {
   ntags = 21,           -- 1..9 on digits; a keys module may put 10..21 on F1..F12
-  state_dir = HOME .. "/.local/state/hyprtags",
+  state_dir = HOME .. "/.local/state/hypr-dwm-land",
   -- Lua module that binds the keys, loaded after the engine is up. The shipped
-  -- "hyprtags.keys" maps Omarchy's own chords onto tags. Copy it to
-  -- ~/.config/hypr/hyprtags-keys.lua, edit, and pass keys = "hypr.hyprtags-keys".
+  -- "hyprdwmland.keys" maps Omarchy's own chords onto tags. Copy it to
+  -- ~/.config/hypr/hypr-dwm-land-keys.lua, edit, and pass keys = "hypr.hypr-dwm-land-keys".
   -- false = bind nothing (Omarchy's workspace keys then stay in force).
-  keys = "hyprtags.keys",
+  keys = "hyprdwmland.keys",
   stray_sweep = 2000,   -- ms: adopt untagged windows this often (0 = only on changes)
   stray_tag = 1,        -- untagged windows outside the scratchpad land here
   combo_timeout = 1000, -- ms: fallback for the modifier-release detection
@@ -93,7 +93,7 @@ local function notify(text)
   if notify_seen[key] and now - notify_seen[key] < 10 then return end
   notify_seen[key] = now
   pcall(function()
-    hl.notification.create({ text = "hyprtags: " .. text, timeout = 6000 })
+    hl.notification.create({ text = "hypr-dwm-land: " .. text, timeout = 6000 })
   end)
 end
 
@@ -316,7 +316,7 @@ end
 -- Persistent state
 -- ---------------------------------------------------------------------------------------
 
--- State file format (hyprtags/state, one record per line, parsed with anchored patterns,
+-- State file format (hypr-dwm-land/state, one record per line, parsed with anchored patterns,
 -- never executed as code):
 --   slot   <monitor> <n>
 --   view   <monitor> <tags>            tags = comma-separated integers
@@ -825,7 +825,7 @@ local function emit_line(monname)
   local v = table.concat(sorted_keys(view[monname] or {}), ",")
   local o = {}
   for _, k in ipairs(sorted_keys(occ)) do o[#o + 1] = k .. ":" .. occ[k] end
-  return string.format("hyprtags>>%s|v=%s|o=%s|u=%s|f=%s", monname, v, table.concat(o, ","),
+  return string.format("hyprdwmland>>%s|v=%s|o=%s|u=%s|f=%s", monname, v, table.concat(o, ","),
     table.concat(sorted_keys(urg), ","), table.concat(sorted_keys(foc), ","))
 end
 
@@ -1337,7 +1337,7 @@ end
 function M.combo_enable(mod)
   mod = mod or "SUPER"
   for _, key in ipairs({ "Super_L", "Super_R" }) do
-    pcall(hl.bind, mod .. " + " .. key, combo_reset, { release = true, description = "hyprtags combo reset" })
+    pcall(hl.bind, mod .. " + " .. key, combo_reset, { release = true, description = "hypr-dwm-land combo reset" })
   end
 end
 

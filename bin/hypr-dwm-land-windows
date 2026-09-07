@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Lost-window finder for Hyprtags: list every window with its tags, pick one in the Omarchy
-# menu, focus it. Focusing a hidden window makes hyprtags reveal its tag; focusing a
+# Lost-window finder for hypr-dwm-land: list every window with its tags, pick one in the Omarchy
+# menu, focus it. Focusing a hidden window makes hypr-dwm-land reveal its tag; focusing a
 # scratchpad window shows the scratchpad.
 #
-#   hyprtags-windows          open the picker
-#   hyprtags-windows --list   print the lines it would offer (for scripting / testing)
+#   hypr-dwm-land-windows          open the picker
+#   hypr-dwm-land-windows --list   print the lines it would offer (for scripting / testing)
 #
 # Window classes and titles are untrusted (a web page sets document.title) and the menu
 # renders labels with a component this script cannot pin to plain text, so every label
@@ -20,7 +20,7 @@ MAX_LABEL=120
 clients=$("$HYPRCTL" clients -j 2>/dev/null | /usr/bin/head -c $((MAX_JSON + 1)))
 [[ -n $clients ]] || exit 0
 if (( ${#clients} > MAX_JSON )); then
-  echo "hyprtags-windows: window list too large" >&2
+  echo "hypr-dwm-land-windows: window list too large" >&2
   exit 1
 fi
 

@@ -6,7 +6,7 @@
 #
 #   uninstall.sh                 config only; windows keep their tags until Hyprland restarts
 #   uninstall.sh --reset-windows also strips tags and moves every window to workspace 1 first
-#   uninstall.sh --purge-state   also deletes ~/.local/state/hyprtags
+#   uninstall.sh --purge-state   also deletes ~/.local/state/hypr-dwm-land
 # The plugin folder itself is removed with: omarchy plugin remove <id>
 set -euo pipefail
 umask 077
@@ -18,9 +18,9 @@ ID=$("$JQ" -r '.id' "$REPO/manifest.json")
 [[ $ID =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo "bad plugin id in manifest" >&2; exit 1; }
 HYPR="$HOME/.config/hypr/hyprland.lua"
 SHELLJSON="$HOME/.config/omarchy/shell.json"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/hyprtags"
-BEGIN="-- BEGIN hyprtags (managed by $ID/install.sh; remove with uninstall.sh)"
-END="-- END hyprtags"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/hypr-dwm-land"
+BEGIN="-- BEGIN hypr-dwm-land (managed by $ID/install.sh; remove with uninstall.sh)"
+END="-- END hypr-dwm-land"
 stamp=$(date +%s)
 reset_windows=0; purge=0
 for a in "$@"; do
@@ -39,7 +39,7 @@ replace_file() {
 }
 
 if (( reset_windows )); then
-  "$HYPRCTL" eval 'hyprtags.uninstall()' >/dev/null 2>&1 || true
+  "$HYPRCTL" eval 'hyprdwmland.uninstall()' >/dev/null 2>&1 || true
 fi
 
 # 1. hyprland.lua: exactly one BEGIN and one END, BEGIN before END, else refuse.
@@ -47,7 +47,7 @@ if [[ -f $HYPR ]]; then
   nb=$(grep -cF -- "$BEGIN" "$HYPR" || true)
   ne=$(grep -cF -- "$END" "$HYPR" || true)
   if (( nb == 0 && ne == 0 )); then
-    echo "no hyprtags block in hyprland.lua" >&2
+    echo "no hypr-dwm-land block in hyprland.lua" >&2
   elif (( nb != 1 || ne != 1 )); then
     echo "refusing: hyprland.lua has $nb BEGIN and $ne END markers; fix by hand" >&2
     exit 1
@@ -78,4 +78,4 @@ fi
 
 "$HYPRCTL" reload >/dev/null || true
 omarchy restart shell >/dev/null 2>&1 || true
-echo "hyprtags config removed. Remaining: the plugin folder (omarchy plugin remove $ID)$( (( purge )) || printf ', %s' "$STATE")."
+echo "hypr-dwm-land config removed. Remaining: the plugin folder (omarchy plugin remove $ID)$( (( purge )) || printf ', %s' "$STATE")."

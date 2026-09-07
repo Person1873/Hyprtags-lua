@@ -1,4 +1,4 @@
-# Hyprtags
+# hypr-dwm-land
 
 Tags instead of workspaces for Hyprland on Omarchy, the way dwm does it. A Lua module for
 Hyprland's config plus a bar widget for the Omarchy shell. No compiled code.
@@ -29,8 +29,8 @@ only the tags that have windows, plus whatever you are viewing.
 ## Quick start
 
 ```sh
-omarchy plugin add https://github.com/Person1873/Hyprtags-lua.git --enable
-~/.config/omarchy/plugins/person1873.hyprtags/install.sh
+omarchy plugin add https://github.com/Person1873/hypr-dwm-land.git --enable
+~/.config/omarchy/plugins/person1873.hypr-dwm-land/install.sh
 ```
 
 Then, with the default keys:
@@ -101,9 +101,9 @@ placement) or in a small state file the module re-reads and checks against reali
 
 The module binds nothing by itself. A **keys module**, a Lua file, does the binding, using
 the module's public functions. Two maps ship. Change the map with
-`require("hyprtags").setup({ keys = "<module name>" })`; `keys = false` binds nothing.
+`require("hyprdwmland").setup({ keys = "<module name>" })`; `keys = false` binds nothing.
 
-### Default map (`hyprtags/keys.lua`): Omarchy's chords, pointed at tags
+### Default map (`hyprdwmland/keys.lua`): Omarchy's chords, pointed at tags
 
 *n* is a digit `1`..`9`; `0` is tag 10.
 
@@ -122,8 +122,8 @@ the module's public functions. Two maps ship. Change the map with
 
 This is the author's own map, carried over from a personal dwm-flexipatch build. It is not
 what dwm or flexipatch ship, and some of it is muscle memory rather than good design. Copy it
-to `~/.config/hypr/hyprtags-keys.lua`, edit freely, and load it with
-`require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })`.
+to `~/.config/hypr/hypr-dwm-land-keys.lua`, edit freely, and load it with
+`require("hyprdwmland").setup({ keys = "hypr.hypr-dwm-land-keys" })`.
 
 *n* is a digit `1`..`9` for tags 1..9, or `F1`..`F12` for tags 10..21.
 
@@ -150,44 +150,44 @@ Each keys file lists the Omarchy chords it displaces in its header comment.
 
 ### Writing your own map
 
-Public functions on the global `hyprtags` table: `view(tags, mon?)`, `toggleview(k)`,
+Public functions on the global `hypr-dwm-land` table: `view(tags, mon?)`, `toggleview(k)`,
 `tag(tags, w?)`, `toggletag(k, w?)`, `view_all()`, `tag_all()`, `view_previous()`,
 `view_next(±1)`, `comboview(k)`, `combotag(k)`, `combo_enable("SUPER")`, `focusurgent()`,
 `winview()`, `sticky()`, `shiftboth(±1)`, `shiftview(±1)`, `tagmon(±1)`, `cycle_layout(±1)`,
 `set_layout(name, opts)`, `toggle_layout()`, `rotate_layout_axis(±1)`, `mirror_layout()`,
 `toggle_gaps()`, `emit()`, `relayout()`, `debug()`, `uninstall()`.
 
-Binding helpers: `hyprtags.rebind(keys, fn, description)` unbinds whatever is on the chord
-and binds yours (every bind on a key fires, so this order matters); `hyprtags.bind` and
-`hyprtags.unbind` are the halves. A bind that fails is logged and reported once; it never
+Binding helpers: `hyprdwmland.rebind(keys, fn, description)` unbinds whatever is on the chord
+and binds yours (every bind on a key fires, so this order matters); `hyprdwmland.bind` and
+`hyprdwmland.unbind` are the halves. A bind that fails is logged and reported once; it never
 takes the rest of the keyboard down.
 
 ## Using it from scripts
 
-Everything is on the global `hyprtags` table inside Hyprland's Lua state:
+Everything is on the global `hypr-dwm-land` table inside Hyprland's Lua state:
 
 ```sh
-hyprctl eval 'hyprtags.view(3)'              # optional second argument: monitor name
-hyprctl eval 'hyprtags.toggleview(4)'
-hyprctl eval 'hyprtags.tag({2, 5})'          # focused window
-hyprctl eval 'hyprtags.emit()'               # re-send the bar state
-hyprctl eval 'hyprtags.debug()'              # writes ~/.local/state/hyprtags/debug.txt
+hyprctl eval 'hyprdwmland.view(3)'              # optional second argument: monitor name
+hyprctl eval 'hyprdwmland.toggleview(4)'
+hyprctl eval 'hyprdwmland.tag({2, 5})'          # focused window
+hyprctl eval 'hyprdwmland.emit()'               # re-send the bar state
+hyprctl eval 'hyprdwmland.debug()'              # writes ~/.local/state/hypr-dwm-land/debug.txt
 ```
 
 `hyprctl eval` prints only `ok` or an error. Read state with `hyprctl clients -j` (the
 tags), `hyprctl workspaces -j`, or the debug file.
 
-`bin/hyprtags-windows` is a lost-window finder: every window as `[tags] class · title` in
+`bin/hypr-dwm-land-windows` is a lost-window finder: every window as `[tags] class · title` in
 the Omarchy picker; picking one focuses it, which reveals its tag. `--list` prints the lines
 instead. The dwm map's author binds it to `SUPER + ALT + W` in their own config.
 
 ## Options
 
-`require("hyprtags").setup({ ... })` accepts:
+`require("hyprdwmland").setup({ ... })` accepts:
 
 | option | default | meaning |
 |---|---|---|
-| `keys` | `"hyprtags.keys"` | keys module to load; `false` for none |
+| `keys` | `"hyprdwmland.keys"` | keys module to load; `false` for none |
 | `ntags` | `21` | how many tags exist (9 digits + 12 F-keys) |
 | `stray_tag` | `1` | where an untagged window is put |
 | `stray_sweep` | `2000` | ms between sweeps for untagged windows; `0` = only on changes |
@@ -201,17 +201,17 @@ Nothing runs on plugin load. `install.sh` is an explicit action and does, once e
 timestamped backup beside every file it edits:
 
 1. From a development checkout, copies the tree into
-   `~/.config/omarchy/plugins/person1873.hyprtags/` (Omarchy refuses symlinked plugin
+   `~/.config/omarchy/plugins/person1873.hypr-dwm-land/` (Omarchy refuses symlinked plugin
    folders). After `omarchy plugin add` the checkout already is that folder.
 2. In `~/.config/omarchy/shell.json`, replaces `omarchy.workspaces` with this widget in the
    bar layout and registers the plugin.
 3. Appends one marked block to `~/.config/hypr/hyprland.lua`:
 
    ```lua
-   -- BEGIN hyprtags (managed by person1873.hyprtags/install.sh; remove with uninstall.sh)
+   -- BEGIN hypr-dwm-land (managed by person1873.hypr-dwm-land/install.sh; remove with uninstall.sh)
    package.path = "<plugin dir>/?.lua;<plugin dir>/?/init.lua;" .. package.path
-   require("hyprtags").setup({})
-   -- END hyprtags
+   require("hyprdwmland").setup({})
+   -- END hypr-dwm-land
    ```
 
    It refuses if a marker is already present. Because this runs after Omarchy's defaults and
@@ -219,7 +219,7 @@ timestamped backup beside every file it edits:
 4. Runs `hyprctl reload`. If `hyprctl configerrors` reports anything, `hyprland.lua` is put
    back to its exact prior bytes and the script exits non-zero. Then restarts the shell.
 
-Files the module writes at run time, all under `~/.local/state/hyprtags/`: `state`, a
+Files the module writes at run time, all under `~/.local/state/hypr-dwm-land/`: `state`, a
 passive line-format file (per-monitor workspace slot, current and previous view, focused
 window per view, layout per tag) that is parsed with anchored patterns and never executed;
 and `debug.txt` on request. No network access, no daemons, no other files.
@@ -230,15 +230,15 @@ Window tags themselves live in the compositor and vanish when Hyprland exits.
 ## Removing
 
 ```sh
-~/.config/omarchy/plugins/person1873.hyprtags/uninstall.sh   # config edits reversed
-omarchy plugin remove person1873.hyprtags                    # the plugin folder
+~/.config/omarchy/plugins/person1873.hypr-dwm-land/uninstall.sh   # config edits reversed
+omarchy plugin remove person1873.hypr-dwm-land                    # the plugin folder
 ```
 
 `uninstall.sh` removes only the marked block from `hyprland.lua` (and refuses if the
 markers are missing, duplicated or out of order), puts `omarchy.workspaces` back in
 `shell.json`, then reloads Hyprland and restarts the shell. Backups are made first.
 
-What survives: `~/.local/state/hyprtags/` (add `--purge-state` to delete it), the
+What survives: `~/.local/state/hypr-dwm-land/` (add `--purge-state` to delete it), the
 `*.bak.<timestamp>` backups, and the tags on currently open windows until Hyprland restarts
 (add `--reset-windows` to strip them and move every window to workspace 1 first). Nothing
 else is left behind.
@@ -269,17 +269,21 @@ model is Hyprland's (window tags, windows moved between two workspaces) rather t
 client list and bitmasks, and the parts dwm never needed are the bulk of the code. Readers
 are welcome to compare. dwm is MIT/X Consortium licensed.
 
+[JoaoCostaIFG/hyprtags](https://github.com/JoaoCostaIFG/hyprtags) is an earlier, unrelated
+C++ Hyprland plugin with the same aim, loaded through `hyprpm`. This project started life
+under the name Hyprtags and was renamed to avoid being mistaken for it; no code is shared.
+
 Built on [Hyprland](https://hyprland.org/) 0.56's Lua config and the
 [Omarchy](https://omarchy.org/) shell plugin system.
 
 ## Layout of this repo
 
 ```
-manifest.json                   Omarchy plugin manifest (id person1873.hyprtags, bar-widget)
+manifest.json                   Omarchy plugin manifest (id person1873.hypr-dwm-land, bar-widget)
 shell/Tags.qml                  the bar widget
-hyprtags/init.lua               the engine (no keybinds)
-hyprtags/keys.lua               default keys: Omarchy's chords on tags
-examples/keys-dwm.lua           the author's dwm-style keys, for ~/.config/hypr/hyprtags-keys.lua
-bin/hyprtags-windows            lost-window finder on omarchy-menu-select (--list to print)
+hyprdwmland/init.lua               the engine (no keybinds)
+hyprdwmland/keys.lua               default keys: Omarchy's chords on tags
+examples/keys-dwm.lua           the author's dwm-style keys, for ~/.config/hypr/hypr-dwm-land-keys.lua
+bin/hypr-dwm-land-windows            lost-window finder on omarchy-menu-select (--list to print)
 install.sh / uninstall.sh       the config edits, and their exact reversal
 ```

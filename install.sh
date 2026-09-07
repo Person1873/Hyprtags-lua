@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Hyprtags installer for Omarchy. Run it yourself; nothing here runs on plugin load.
+# hypr-dwm-land installer for Omarchy. Run it yourself; nothing here runs on plugin load.
 #
 #   omarchy plugin add <git url> --enable
-#   ~/.config/omarchy/plugins/person1873.hyprtags/install.sh
+#   ~/.config/omarchy/plugins/person1873.hypr-dwm-land/install.sh
 # or from a development checkout elsewhere (copies the tree into the plugin folder).
 #
 # What it edits, each behind a backup (*.bak.<timestamp>) and made once:
@@ -21,8 +21,8 @@ ID=$("$JQ" -r '.id' "$REPO/manifest.json")
 PLUG="$HOME/.config/omarchy/plugins/$ID"
 HYPR="$HOME/.config/hypr/hyprland.lua"
 SHELLJSON="$HOME/.config/omarchy/shell.json"
-BEGIN="-- BEGIN hyprtags (managed by $ID/install.sh; remove with uninstall.sh)"
-END="-- END hyprtags"
+BEGIN="-- BEGIN hypr-dwm-land (managed by $ID/install.sh; remove with uninstall.sh)"
+END="-- END hypr-dwm-land"
 stamp=$(date +%s)
 
 # Atomic replace: exclusive temporary in the destination directory, then rename.
@@ -58,14 +58,14 @@ fi
 
 # 3. hyprland.lua: one marked block, refused if a marker is already present.
 if grep -qF -- "$BEGIN" "$HYPR" || grep -qF -- "$END" "$HYPR"; then
-  echo "hyprland.lua already carries a hyprtags block; nothing appended" >&2
+  echo "hyprland.lua already carries a hypr-dwm-land block; nothing appended" >&2
 else
   cp -- "$HYPR" "$HYPR.bak.$stamp"
   {
     cat -- "$HYPR"
     printf '\n%s\n' "$BEGIN"
     printf 'package.path = "%s/?.lua;%s/?/init.lua;" .. package.path\n' "$PLUG" "$PLUG"
-    printf 'require("hyprtags").setup({})\n'
+    printf 'require("hyprdwmland").setup({})\n'
     printf '%s\n' "$END"
   } | replace_file "$HYPR"
 fi
@@ -84,4 +84,4 @@ if [[ -n $errs ]]; then
   exit 1
 fi
 omarchy restart shell >/dev/null 2>&1 || true
-echo "hyprtags installed as $ID. Try SUPER+1..9; README.md has the key maps and uninstall.sh reverses this."
+echo "hypr-dwm-land installed as $ID. Try SUPER+1..9; README.md has the key maps and uninstall.sh reverses this."
