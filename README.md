@@ -90,29 +90,31 @@ The engine binds nothing itself. A **keys module** does, using the public `hyprt
 functions plus `hyprtags.rebind(keys, fn, desc)` (unbind the chord, bind ours, report
 failures) and `hyprtags.unbind(keys)`. Two maps ship:
 
-**`hyprtags/keys.lua` (default)** keeps Omarchy's own chords and points them at tags:
+**`hyprtags/keys.lua` (default)** keeps Omarchy's own chords and points them at tags.
+*n* is a digit `1`..`9`; `0` is tag 10.
 
 | keys | action | Omarchy meaning |
 |---|---|---|
-| `SUPER + 1..9, 0` | view tag 1..10 | switch workspace |
-| `SUPER + SHIFT + n` | tag n and follow | move window to workspace |
-| `SUPER + SHIFT + ALT + n` | tag n, stay | move silently |
-| `SUPER + CTRL + n` | toggle tag n in the view | (free) |
-| `SUPER + CTRL + SHIFT + n` | toggle tag n on the window | (free) |
+| `SUPER +` *n* | view tag *n* | switch workspace |
+| `SUPER + SHIFT +` *n* | tag *n* and follow | move window to workspace |
+| `SUPER + SHIFT + ALT +` *n* | tag *n*, stay | move silently |
+| `SUPER + CTRL +` *n* | toggle tag *n* in the view | (free) |
+| `SUPER + CTRL + SHIFT +` *n* | toggle tag *n* on the window | (free) |
 | `SUPER + TAB` / `SHIFT + TAB` | next / previous occupied tag | next / previous workspace |
 | `SUPER + CTRL + TAB` | previous view | former workspace |
 | `SUPER + mouse wheel` | next / previous occupied tag | scroll workspaces |
 
 **`examples/keys-dwm.lua`** is the dwm-flexipatch map. Copy it to
 `~/.config/hypr/hyprtags-keys.lua`, edit freely, and load it with
-`require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })`:
+`require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })`. *n* is a digit `1`..`9` for
+tags 1..9, or `F1`..`F12` for tags 10..21.
 
 | keys | action |
 |---|---|
-| `SUPER + 1..9`, `SUPER + F1..F12` | view tag 1..9 / 10..21 (hold SUPER and press several to view them together) |
-| `SUPER + SHIFT + <tag key>` | put the focused window on that tag only (combo: several tags) |
-| `SUPER + CTRL + <tag key>` | toggle the tag in the view |
-| `SUPER + CTRL + SHIFT + <tag key>` | toggle the tag on the focused window |
+| `SUPER +` *n* | view tag *n* (hold SUPER and press several to view them together) |
+| `SUPER + SHIFT +` *n* | put the focused window on tag *n* only (combo: several tags) |
+| `SUPER + CTRL +` *n* | toggle tag *n* in the view |
+| `SUPER + CTRL + SHIFT +` *n* | toggle tag *n* on the focused window |
 | `SUPER + 0` / `SUPER + SHIFT + 0` | view all (again: back to the previous view) / tag with all |
 | `SUPER + TAB` | previous view (back and forth) |
 | `SUPER + U` | focus the urgent window (reveals its tag) |
