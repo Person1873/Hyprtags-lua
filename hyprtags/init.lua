@@ -28,27 +28,17 @@ local unpack = table.unpack or unpack
 -- ---------------------------------------------------------------------------------------
 
 local cfg = {
-  -- Tags 1..9 sit on the digit keys; with `fkeys` tags 10..21 sit on F1..F12 (dwm-style).
-  ntags = 21,
-  fkeys = true,
+  ntags = 21,           -- 1..9 on digits; a keys module may put 10..21 on F1..F12
   state_dir = HOME .. "/.local/state/hyprtags",
-  -- Digit keycodes: code:10 = "1" ... code:18 = "9", code:19 = "0".
-  bind_keys = true,
+  -- Lua module that binds the keys, loaded after the engine is up. The shipped
+  -- "hyprtags.keys" maps Omarchy's own chords onto tags. Copy it to
+  -- ~/.config/hypr/hyprtags-keys.lua, edit, and pass keys = "hypr.hyprtags-keys".
+  -- false = bind nothing (Omarchy's workspace keys then stay in force).
+  keys = "hyprtags.keys",
   stray_sweep = 2000,   -- ms: adopt untagged windows this often (0 = only on changes)
   stray_tag = 1,        -- untagged windows outside the scratchpad land here
-  unbind_omarchy = true,
   combo_timeout = 1000, -- ms: fallback for the modifier-release detection
   emit_delay = 30,      -- ms: debounce for bar events
-  keys = {
-    view_prev  = "SUPER + TAB",
-    focusurgent = "SUPER + U",
-    winview    = "SUPER + O",
-    sticky     = "SUPER + SHIFT + S",
-    shift_left = "SUPER + CTRL + LEFT",
-    shift_right = "SUPER + CTRL + RIGHT",
-    tagmon_prev = "SUPER + SHIFT + comma",
-    tagmon_next = "SUPER + SHIFT + period",
-  },
 }
 
 -- ---------------------------------------------------------------------------------------
@@ -71,7 +61,7 @@ local lastfocus = {}      -- monname -> { [viewkey] = address }  (address of the
 local pending = {}        -- monname -> true while a deferred reconcile is queued
 local bounce_block = {}   -- ws id -> true while a move_to_monitor bounce is cooling down
 local bounce_disabled = false
-local bind_failures = {}  -- "keys: error" strings from the last setup_keys()
+local bind_failures = {}  -- "keys: error" strings from the last keys-module load
 
 local function log(fmt, ...)
   local line = os.date("%H:%M:%S ") .. string.format(fmt, ...)
@@ -740,6 +730,25 @@ function M.toggleview(k, monname)
 end
 
 -- dwm SUPER+0: view everything; pressed again, go back to where you were.
+-- Next/previous tag among the occupied ones (plus the current view), wrapping. This is
+-- Omarchy's "next/previous existing workspace" translated to tags.
+function M.view_next(dir, monname)
+  monname = resolve_mon(monname)
+  if not monname then return end
+  local occ = {}
+  for _, w in ipairs(managed_windows(monname)) do
+    for k in pairs((read_tags(w))) do occ[k] = true end
+  end
+  local cur = min_key(view[monname]) or 1
+  occ[cur] = true
+  local ks = sorted_keys(occ)
+  if #ks < 2 then return end
+  local idx = 1
+  for i, k in ipairs(ks) do if k == cur then idx = i end end
+  local nk = ks[((idx - 1 + dir) % #ks) + 1]
+  set_view(monname, { [nk] = true })
+end
+
 function M.view_all(monname)
   monname = resolve_mon(monname)
   if not monname then return end
@@ -966,18 +975,8 @@ end
 adopt_strays_ref = adopt_strays
 
 -- ---------------------------------------------------------------------------------------
--- Keys
+-- Key helpers (the engine binds nothing itself; a keys module does, see cfg.keys)
 -- ---------------------------------------------------------------------------------------
-
-local OMARCHY_UNBINDS = {
-  "SUPER + TAB", "SUPER + SHIFT + TAB", "SUPER + CTRL + TAB",
-  "SUPER + mouse_down", "SUPER + mouse_up",
-  -- displaced by the dwm map below
-  "SUPER + O",            -- Pop window out -> SUPER + ALT + O
-  "SUPER + CTRL + LEFT",  -- group prev
-  "SUPER + CTRL + RIGHT", -- group next
-  "SUPER + SHIFT + S",    -- Google Maps webapp
-}
 
 local function combo_reset()
   combo.active = false
@@ -996,7 +995,8 @@ local function combo_touch()
   end, { timeout = cfg.combo_timeout, type = "oneshot" })
 end
 
-local function comboview(k)
+-- dwm COMBO patch: while the modifier stays held, successive tag keys OR together.
+function M.comboview(k)
   local monname = resolve_mon(nil)
   if not monname then return end
   if combo.active then
@@ -1009,7 +1009,7 @@ local function comboview(k)
   combo_touch()
 end
 
-local function combotag(k)
+function M.combotag(k)
   local w = target_window(nil)
   if not w then return end
   local members = read_tags(w)
@@ -1022,84 +1022,52 @@ local function combotag(k)
   combo_touch()
 end
 
--- Bind one chord; a failure is logged and counted, never fatal, so a broken bind cannot
--- take the rest of the keyboard with it.
-local function bind(keys, fn, desc)
+-- Release binds on the modifier keys end a combo; the timer above is the fallback.
+function M.combo_enable(mod)
+  mod = mod or "SUPER"
+  for _, key in ipairs({ "Super_L", "Super_R" }) do
+    pcall(hl.bind, mod .. " + " .. key, combo_reset, { release = true, description = "hyprtags combo reset" })
+  end
+end
+
+-- Bind one chord to a Lua function; a failure is logged and counted, never fatal, so a
+-- broken bind cannot take the rest of the keyboard with it.
+function M.bind(keys, fn, desc, opts)
   if not keys then return end
-  local ok, err = pcall(hl.bind, keys, guard(desc, fn), { description = desc })
+  opts = opts or {}
+  opts.description = desc
+  local ok, err = pcall(hl.bind, keys, guard(desc, fn), opts)
   if not ok then
     bind_failures[#bind_failures + 1] = keys .. ": " .. tostring(err)
     log("bind %s failed: %s", keys, tostring(err))
   end
 end
 
--- Replace an Omarchy chord with ours as one step per chord: unbind, then bind. Every bind
--- on a key fires, so the unbind has to come first; if the bind then fails, only that chord
--- is lost and it is reported.
-local function unbind(keys)
+function M.unbind(keys)
   pcall(hl.unbind, keys)
 end
 
-local function setup_keys()
+-- Replace whatever is on a chord with ours, as one step per chord. Every bind on a key
+-- fires, so the unbind has to come first; if the bind then fails, only that chord is lost
+-- and it is reported.
+function M.rebind(keys, fn, desc, opts)
+  M.unbind(keys)
+  M.bind(keys, fn, desc, opts)
+end
+
+local function load_keys()
   bind_failures = {}
-  if cfg.unbind_omarchy then
-    for _, k in ipairs(OMARCHY_UNBINDS) do unbind(k) end
-    pcall(hl.bind, "SUPER + ALT + O", hl.dsp.exec_cmd("omarchy-hyprland-window-pop"), { description = "Pop window out (float & pin)" })
+  if not cfg.keys then return end
+  package.loaded[cfg.keys] = nil
+  local ok, err = pcall(require, cfg.keys)
+  if not ok then
+    log("keys module %s failed: %s", tostring(cfg.keys), tostring(err))
+    notify("keys module " .. tostring(cfg.keys) .. " failed: " .. tostring(err))
   end
-  if not cfg.bind_keys then
-    if cfg.unbind_omarchy then
-      for i = 1, 10 do
-        local key = "code:" .. tostring(i + 9)
-        unbind("SUPER + " .. key); unbind("SUPER + SHIFT + " .. key); unbind("SUPER + SHIFT + ALT + " .. key)
-      end
-    end
-    return
-  end
-
-  for k = 1, math.min(cfg.ntags, 9) do
-    local key = "code:" .. tostring(k + 9)
-    if cfg.unbind_omarchy then
-      unbind("SUPER + " .. key); unbind("SUPER + SHIFT + " .. key); unbind("SUPER + SHIFT + ALT + " .. key)
-    end
-    bind("SUPER + " .. key, function() comboview(k) end, "View tag " .. k)
-    bind("SUPER + CTRL + " .. key, function() M.toggleview(k) end, "Toggle view of tag " .. k)
-    bind("SUPER + SHIFT + " .. key, function() combotag(k) end, "Tag window " .. k)
-    bind("SUPER + CTRL + SHIFT + " .. key, function() M.toggletag(k) end, "Toggle window tag " .. k)
-  end
-  if cfg.unbind_omarchy then
-    unbind("SUPER + code:19"); unbind("SUPER + SHIFT + code:19"); unbind("SUPER + SHIFT + ALT + code:19")
-  end
-  if cfg.fkeys then
-    for k = 10, math.min(cfg.ntags, 21) do
-      local key = "F" .. tostring(k - 9)
-      bind("SUPER + " .. key, function() comboview(k) end, "View tag " .. k .. " (" .. key .. ")")
-      bind("SUPER + CTRL + " .. key, function() M.toggleview(k) end, "Toggle view of tag " .. k .. " (" .. key .. ")")
-      bind("SUPER + SHIFT + " .. key, function() combotag(k) end, "Tag window " .. k .. " (" .. key .. ")")
-      bind("SUPER + CTRL + SHIFT + " .. key, function() M.toggletag(k) end, "Toggle window tag " .. k .. " (" .. key .. ")")
-    end
-  end
-  bind("SUPER + code:19", function() M.view_all() end, "View all tags")
-  bind("SUPER + SHIFT + code:19", function() M.tag_all() end, "Tag window with all tags")
-
-  local K = cfg.keys
-  bind(K.view_prev, function() M.view_previous() end, "View previous tags")
-  bind(K.focusurgent, function() M.focusurgent() end, "Focus urgent window")
-  bind(K.winview, function() M.winview() end, "View the focused window's tags")
-  bind(K.sticky, function() M.sticky() end, "Toggle sticky (pin)")
-  bind(K.shift_left, function() M.shiftboth(-1) end, "Shift window and view to previous tag")
-  bind(K.shift_right, function() M.shiftboth(1) end, "Shift window and view to next tag")
-  bind(K.tagmon_prev, function() M.tagmon(-1) end, "Send window to previous monitor")
-  bind(K.tagmon_next, function() M.tagmon(1) end, "Send window to next monitor")
-
-  -- Combo reset on modifier release; the timer above is the fallback if this never fires.
-  pcall(hl.bind, "SUPER + Super_L", combo_reset, { release = true, description = "hyprtags combo reset" })
-  pcall(hl.bind, "SUPER + Super_R", combo_reset, { release = true, description = "hyprtags combo reset" })
-
   if #bind_failures > 0 then
     notify(#bind_failures .. " keybind(s) failed, see debug(): " .. bind_failures[1])
   end
 end
-
 -- ---------------------------------------------------------------------------------------
 -- Events
 -- ---------------------------------------------------------------------------------------
@@ -1364,8 +1332,8 @@ local function init()
     for _, w in ipairs(hl.get_windows({ monitor = m.name })) do adopt(w, nil) end
   end
 
-  setup_keys()
   setup_events()
+  load_keys()
 
   for _, m in ipairs(monitors) do
     reconcile(m.name, { focus = false })
@@ -1386,13 +1354,7 @@ end
 
 function M.setup(opts)
   opts = opts or {}
-  for k, v in pairs(opts) do
-    if k == "keys" and type(v) == "table" then
-      for kk, vv in pairs(v) do cfg.keys[kk] = vv end
-    else
-      cfg[k] = v
-    end
-  end
+  for k, v in pairs(opts) do cfg[k] = v end
   local ok, err = pcall(init)
   if not ok then
     log("init failed: %s", tostring(err))

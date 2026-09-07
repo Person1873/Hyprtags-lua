@@ -56,23 +56,39 @@ only once; re-run the script after editing the widget.
 The loader line is:
 
 ```lua
-package.path = os.getenv("HOME") .. "/Hyprtags-lua/?/init.lua;" .. package.path
+package.path = os.getenv("HOME") .. "/Hyprtags-lua/?.lua;" .. os.getenv("HOME") .. "/Hyprtags-lua/?/init.lua;" .. package.path
 require("hyprtags").setup({})
 ```
 
-It must run after Omarchy's defaults and your own `hypr/bindings.lua`, because it unbinds
-the Omarchy chords it replaces and every bind on a key fires.
+It must run after Omarchy's defaults and your own `hypr/bindings.lua`, because the keys
+module unbinds the Omarchy chords it replaces and every bind on a key fires.
 
-`setup()` options: `ntags` (default 21: digits 1..9 plus F1..F12), `fkeys` (false = digits
-only), `stray_tag` (default 1), `stray_sweep` ms (default 2000, 0 = only on changes),
-`bind_keys` (false = no keys at all),
-`unbind_omarchy` (false = leave Omarchy's digit/TAB binds alone), `combo_timeout` ms,
-`emit_delay` ms, and `keys = { view_prev, focusurgent, winview, sticky, shift_left,
-shift_right, tagmon_prev, tagmon_next }` to move or disable (`false`) any non-digit key.
+`setup()` options: `keys` (Lua module name that binds the keys; default `"hyprtags.keys"`,
+`false` = bind nothing), `ntags` (default 21), `stray_tag` (default 1), `stray_sweep` ms
+(default 2000, 0 = only on changes), `combo_timeout` ms, `emit_delay` ms.
 
 ## Keys
 
-Tag keys (owned by the module; follow dwm-flexipatch `TAGKEYS` with the combo patch):
+The engine binds nothing itself. A **keys module** does, using the public `hyprtags.*`
+functions plus `hyprtags.rebind(keys, fn, desc)` (unbind the chord, bind ours, report
+failures) and `hyprtags.unbind(keys)`. Two maps ship:
+
+**`hyprtags/keys.lua` (default)** keeps Omarchy's own chords and points them at tags:
+
+| keys | action | Omarchy meaning |
+|---|---|---|
+| `SUPER + 1..9, 0` | view tag 1..10 | switch workspace |
+| `SUPER + SHIFT + n` | tag n and follow | move window to workspace |
+| `SUPER + SHIFT + ALT + n` | tag n, stay | move silently |
+| `SUPER + CTRL + n` | toggle tag n in the view | (free) |
+| `SUPER + CTRL + SHIFT + n` | toggle tag n on the window | (free) |
+| `SUPER + TAB` / `SHIFT + TAB` | next / previous occupied tag | next / previous workspace |
+| `SUPER + CTRL + TAB` | previous view | former workspace |
+| `SUPER + mouse wheel` | next / previous occupied tag | scroll workspaces |
+
+**`examples/keys-dwm.lua`** is the dwm-flexipatch map. Copy it to
+`~/.config/hypr/hyprtags-keys.lua`, edit freely, and load it with
+`require("hyprtags").setup({ keys = "hypr.hyprtags-keys" })`:
 
 | keys | action |
 |---|---|
@@ -83,10 +99,15 @@ Tag keys (owned by the module; follow dwm-flexipatch `TAGKEYS` with the combo pa
 | `SUPER + 0` / `SUPER + SHIFT + 0` | view all (again: back to the previous view) / tag with all |
 | `SUPER + TAB` | previous view (back and forth) |
 | `SUPER + U` | focus the urgent window (reveals its tag) |
-| `SUPER + O` | view the focused window's tags |
+| `SUPER + O` | view the focused window's tags (Pop window out moves to `SUPER + ALT + O`) |
 | `SUPER + SHIFT + S` | sticky (pin) |
 | `SUPER + CTRL + LEFT/RIGHT` | shift window and view to the previous/next tag |
 | `SUPER + SHIFT + , / .` | send window to the previous/next monitor (takes that monitor's view) |
+
+Public functions for your own map: `view(tags, mon?)`, `toggleview(k)`, `tag(tags, w?)`,
+`toggletag(k, w?)`, `view_all()`, `tag_all()`, `view_previous()`, `view_next(±1)`,
+`comboview(k)`, `combotag(k)`, `combo_enable("SUPER")`, `focusurgent()`, `winview()`,
+`sticky()`, `shiftboth(±1)`, `shiftview(±1)`, `tagmon(±1)`.
 
 Bar widget: left click = view, right click = toggle into view, **Ctrl** + left = tag the
 focused window, **Ctrl** + right = toggle the tag on it. (SUPER + mouse is consumed by
@@ -100,10 +121,7 @@ the shown scratchpad and press any tag key (`SUPER + SHIFT + 3`, or `SUPER + CTR
 to keep its old tags too): it leaves the scratchpad and lands on screen if one of its tags is
 viewed, otherwise parked on that tag.
 
-Omarchy chords displaced by the module: `SUPER [+SHIFT[+ALT]] + 1..0` (workspace switch/move),
-`SUPER [+SHIFT|+CTRL] + TAB`, `SUPER + mouse_up/down`, `SUPER + O` ("Pop window out", now
-`SUPER + ALT + O`), `SUPER + CTRL + LEFT/RIGHT` (group prev/next; `SUPER + ALT + TAB` still
-cycles groups), `SUPER + SHIFT + S` (Google Maps web app).
+Each keys file lists the Omarchy chords it displaces in its header comment.
 
 ### dwm app/window layer (in `~/.config/hypr/bindings.lua`, not in the module)
 
@@ -167,7 +185,9 @@ backup (or put `omarchy.workspaces` back), delete
 ## Layout
 
 ```
-hyprtags/init.lua               the module
+hyprtags/init.lua               the engine (no keybinds)
+hyprtags/keys.lua               default keys: Omarchy's chords on tags
+examples/keys-dwm.lua           dwm-flexipatch keys, for ~/.config/hypr/hyprtags-keys.lua
 shell/person1873.hyprtags/        Omarchy shell bar-widget (manifest.json, Tags.qml)
 install.sh                      idempotent installer
 ```
