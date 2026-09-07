@@ -270,6 +270,44 @@ socat -u UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket
 What has been exercised, and what has not, is listed in [AUTHORSHIP.md](AUTHORSHIP.md).
 Anything involving a second monitor is still untested.
 
+## FAQ: tags are not workspaces
+
+The plugin keeps Hyprland's own machinery working where it can, but tags are a different
+model from workspaces, and anything that treats the two visible workspaces as the whole
+story, or manages window tags for its own purposes, may not behave as it expects. Best
+effort, not a guarantee. Known cases:
+
+**Another tool shows workspaces 101 and 102 (or 201, 202), not tags.** That is what exists
+at the Hyprland level; only this plugin's bar widget speaks tags. Clicking the parking
+workspace in such a tool focuses it for an instant and is bounced back to the visible one.
+Omarchy's stock `omarchy.workspaces` widget, if re-enabled beside this one, shows nothing
+occupied because it only lists workspaces 1..10.
+
+**A plugin or script cleared a window's tags and it jumped to tag 1.** Tag membership lives
+in Hyprland's window tags (`WMT<n>`). Anything that runs `clearwindowtags` or
+`hl.dsp.window.clear_tags` strips them, and the next sweep re-adopts the window to tag 1
+(`stray_tag`) because an untagged window has nowhere else to go. Tools that add or remove
+their own tags without clearing are unaffected.
+
+**A window rule keyed on a `WMT` tag must not set `workspace`.** `match = { tag = "WMT3" }`
+with `float`, `opacity`, `size` and the like works and is the point of the plain tag names.
+With `workspace = "5"` the rule and the plugin fight over where the window lives: the rule
+fires every time the tag is written, moves the window to 5, and the plugin adopts it back
+as tag 5.
+
+**Workspace-swipe gestures land in the parking lot.** Omarchy ships none. If you enable
+Hyprland's `workspace` swipe gesture you will swipe into the parking workspace and be
+bounced every time; bind the gesture to `hyprdwmland.view_next(±1)` instead.
+
+**A script moved a window to a numbered workspace.** That is adopted as "put it on that
+tag" (on screen if the tag is in view, parked otherwise), which is usually what was meant.
+Tools that rearrange many windows this way have not been tested.
+
+**Tabbed groups move together.** Hyprland moves a whole group when one member moves, so a
+group has one membership; tagging any member tags them all. See "How it works".
+
+**Second monitor.** Written, untested. Report what you find.
+
 ## Prior art and credit
 
 The model is [dwm](https://dwm.suckless.org/) by the suckless team: tags as a set per
