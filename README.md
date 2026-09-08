@@ -65,6 +65,32 @@ Then, with the default key map (Omarchy's own chords; the dwm map below differs,
 The full maps are under [Keys](#keys); what the module writes at run time is under
 [What it touches](#what-it-touches); [Removing](#removing) undoes everything.
 
+## Naming tags
+
+A tag can carry a name, any Unicode, up to 24 characters; it replaces the number in the bar
+and empty tags stay hidden as before. Middle-click the tags widget for the naming pane (Tab
+walks the fields, Return saves, Escape closes), or set them from the command line:
+
+```sh
+omarchy bar set person1873.hypr-dwm-land names '{"3":"web","4":"mail"}' --json
+omarchy-shell shell toggle person1873.hypr-dwm-land     # the pane, from a key or the menu
+```
+
+Names are a setting of the widget in `~/.config/omarchy/shell.json`, not engine state: the
+keys, the socket line and other bars go on speaking in numbers.
+
+## Skills for agents
+
+Omarchy is built to be driven by AI agents, so the repo ships two skills under
+[agents/skills](agents/skills): `hypr-dwm-land`, for using tags from an agent session (the
+operations, how to read state, and the etiquette of changing a view someone is looking at),
+and `hypr-dwm-land-dev`, for working on this code. Link them the way Omarchy links its own:
+
+```sh
+p=~/.config/omarchy/plugins/person1873.hypr-dwm-land/agents/skills
+for d in ~/.agents/skills ~/.claude/skills ~/.codex/skills; do mkdir -p "$d"; ln -sfn "$p/hypr-dwm-land" "$d/hypr-dwm-land"; ln -sfn "$p/hypr-dwm-land-dev" "$d/hypr-dwm-land-dev"; done
+```
+
 ## How it works
 
 Hyprland has no tags, so the module builds them from things Hyprland does have.

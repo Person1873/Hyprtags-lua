@@ -10,11 +10,47 @@ import qs.Ui
 // Clicks go back through `hyprctl eval`.
 //   left        view tag        right       toggle tag into the view
 //   ctrl+left   tag window      ctrl+right  toggle window tag
+//   middle      tag names pane (also: omarchy-shell shell toggle person1873.hypr-dwm-land)
+// A tag may carry a name (settings.names, edited in the pane); it replaces the number.
 BarWidget {
   id: root
   moduleName: "person1873.hypr-dwm-land"
 
   property int ntags: Number(setting("ntags", 21))
+  readonly property var names: setting("names", {}) || {}
+
+  function nameOf(k) {
+    var n = names[String(k)]
+    return n ? String(n) : ""
+  }
+
+  // ---- names pane, hosted here like the first-party popouts (weather, clock) ----
+  function injectPanel() {
+    var target = panelLoader.item
+    if (!target) return
+    if ("bar" in target) target.bar = root.bar
+    if ("settings" in target) target.settings = root.settings
+    if ("anchorItem" in target) target.anchorItem = grid
+    if ("hostWidget" in target) target.hostWidget = root
+    if ("ntags" in target) target.ntags = root.ntags
+  }
+  function togglePanel() { if (panelLoader.item && panelLoader.item.toggle) panelLoader.item.toggle() }
+  // Shape contract for shell.summon/hide/toggle routing (open/close/opened on the widget root).
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  function open() { if (panelLoader.item && panelLoader.item.openFromHotkey) panelLoader.item.openFromHotkey() }
+  function close() { if (panelLoader.item && panelLoader.item.close) panelLoader.item.close() }
+  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
+  onBarChanged: injectPanel()
+  onSettingsChanged: injectPanel()
+
+  Loader {
+    id: panelLoader
+    active: true
+    source: Qt.resolvedUrl("Names.qml")
+    visible: false
+    onLoaded: { root.injectPanel(); Qt.callLater(root.injectPanel) }
+  }
   property string monitorName: ""
   property var viewed: ({})
   property var occupied: ({})
@@ -165,15 +201,18 @@ BarWidget {
           anchors.fill: parent
           bar: root.bar
           pressable: false
-          // tags 10..21 live on F1..F12, so label them that way
-          text: cell.hasFocus ? "󱓻" : (cell.modelData > 9 ? "F" + (cell.modelData - 9) : String(cell.modelData))
+          // tags 10..21 live on F1..F12, so label them that way; a named tag shows its name,
+          // with the focus glyph in front instead of in place
+          readonly property string tagName: root.nameOf(cell.modelData)
+          readonly property string baseLabel: tagName !== "" ? tagName : (cell.modelData > 9 ? "F" + (cell.modelData - 9) : String(cell.modelData))
+          text: cell.hasFocus ? (tagName !== "" ? "󱓻 " + tagName : "󱓻") : baseLabel
           active: cell.isUrgent
           opacity: cell.isOccupied || cell.isViewed ? 1 : 0.5
           horizontalMargin: 6
           verticalPadding: 6
-          fixedWidth: root.vertical ? root.barSize : Style.space(20)
+          fixedWidth: root.vertical ? root.barSize : (button.tagName !== "" ? -1 : Style.space(20))
           fixedHeight: root.barSize
-          tooltipText: "Tag " + cell.modelData + (cell.isOccupied ? " (" + root.occupied[cell.modelData] + ")" : "")
+          tooltipText: "Tag " + cell.modelData + (button.tagName !== "" ? " · " + button.tagName : "") + (cell.isOccupied ? " (" + root.occupied[cell.modelData] + ")" : "")
         }
 
         // Viewed-tag marker, dwm style: a thin bar along the outer edge.
@@ -194,12 +233,13 @@ BarWidget {
 
         MouseArea {
           anchors.fill: parent
-          acceptedButtons: Qt.LeftButton | Qt.RightButton
+          acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
           cursorShape: Qt.PointingHandCursor
           onClicked: function(mouse) {
             var ctrl = (mouse.modifiers & Qt.ControlModifier) !== 0
             var k = cell.modelData
-            if (mouse.button === Qt.LeftButton && !ctrl) root.call("hyprdwmland.view(" + k + root.monArg() + ")")
+            if (mouse.button === Qt.MiddleButton) root.togglePanel()
+            else if (mouse.button === Qt.LeftButton && !ctrl) root.call("hyprdwmland.view(" + k + root.monArg() + ")")
             else if (mouse.button === Qt.RightButton && !ctrl) root.call("hyprdwmland.toggleview(" + k + root.monArg() + ")")
             else if (mouse.button === Qt.LeftButton && ctrl) root.call("hyprdwmland.tag(" + k + ")")
             else if (mouse.button === Qt.RightButton && ctrl) root.call("hyprdwmland.toggletag(" + k + ")")

@@ -13,12 +13,13 @@
   },
   "barWidget": {
     "displayName": "Tags",
-    "description": "DWM-style tags (hides empty tags)",
+    "description": "DWM-style tags (hides empty tags; tags can be named)",
     "category": "Compositor",
     "allowMultiple": false,
     "defaultSection": "left",
     "defaults": {
-      "ntags": 21
+      "ntags": 21,
+      "names": {}
     },
     "schema": [
       {

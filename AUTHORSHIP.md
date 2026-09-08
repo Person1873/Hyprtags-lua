@@ -172,3 +172,21 @@ commit), so they are restored from `main` and the README leads with Omarchy's ow
 and offers the scripts as the alternative. Also added at the human's "in principle yes":
 version 0.2.0, FAQ entries on mouse drags across monitors and on `focus_on_activate`, and a
 Companions section.
+
+## Tag names and agent skills (2026-09-09, dev)
+
+The human wanted the update to carry more than the reselect event: "a settings pane for the
+tag widget which allows naming/renaming of tags with full unicode support". Design by the
+AI after reading the shell: names are a widget setting (`names` object in the widget's
+shell.json entry), written through the shell's `setBarWidget` IPC, the same path as
+`omarchy bar set … --json`, so the engine, the keys and the socket protocol are untouched
+and other bars keep their numbers. `shell/Names.qml` is a popout hosted by the widget in the
+first-party pattern (weather, clock): middle-click or `omarchy-shell shell toggle` opens it,
+one field per tag, Tab/Return/Escape. A named tag shows its name in the bar with the focus
+glyph in front rather than in place. Tested: names set from the CLI in Latin, Cyrillic and
+an emoji appeared in the bar; the pane opened clean; a name typed into the pane through
+wtype landed in shell.json and the bar. Mouse editing in the pane was not exercised by the AI.
+
+The human also asked for skills, "omarchy is also AI first": `agents/skills/hypr-dwm-land`
+(using it) and `agents/skills/hypr-dwm-land-dev` (working on it), linked the way Omarchy's
+migrations link its own skills into the agents' skill directories.
