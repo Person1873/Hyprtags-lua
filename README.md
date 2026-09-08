@@ -47,7 +47,9 @@ require("hyprdwmland").setup({})
 ```
 
 `hyprctl reload`, then `hyprctl configerrors` should print nothing. Nothing edits your
-config for you and nothing runs on plugin load.
+config for you and nothing runs on plugin load. If you would rather have those edits made
+for you, `install.sh` in the plugin folder does exactly the above (widget placement, one
+marked block in `hyprland.lua`), each file behind a backup, and `uninstall.sh` reverses it.
 
 Then, with the default key map (Omarchy's own chords; the dwm map below differs, notably
 `SUPER + TAB`):
@@ -300,6 +302,9 @@ omarchy plugin enable omarchy.workspaces --section left
 omarchy plugin remove person1873.hypr-dwm-land
 ```
 
+`uninstall.sh` in the plugin folder runs the same sequence, removing only what `install.sh`
+wrote (`--keep-windows` leaves windows on 101/102 with their tags).
+
 `hyprdwmland.uninstall()` hands windows back as if tags had been workspaces all along:
 each goes to the workspace numbered like its lowest tag (tags above 10 go to workspace 1,
 since Omarchy's keys stop there), its tags are stripped, and the workspace matching your
@@ -368,6 +373,28 @@ there, `tagmon` both ways, a silent cross-monitor move taking the destination's 
 Omarchy's "move workspace to monitor" being sent back, and removal landing the orphaned
 windows in the survivor's parking lot with their tags. Physical hot-plug, differing scales
 and DPMS have not been exercised. Report what you find.
+
+**Dragging a window to another monitor with the mouse.** The drop is seen as a move to
+that monitor's pair and the window is retagged with the destination's view. Best effort:
+a drag that ends on a hidden workspace or mid-animation may land on the wrong side of the
+pair for a moment; the next reconcile puts it right.
+
+**An app asks for attention and the tag is not marked urgent; the view jumps there
+instead.** Hyprland's `misc:focus_on_activate`, on by default in Omarchy, turns an
+activation request into focus, and hypr-dwm-land follows focus to its tag. Off, the request
+becomes urgency: the tag takes the urgent colour in the bar and `focusurgent` (`SUPER + U` in
+the dwm map) goes there when you choose. One line in your Hyprland config:
+
+```lua
+hl.config({ misc = { focus_on_activate = false } })
+```
+
+## Companions
+
+[just-hyprtonation](https://github.com/Person1873/just-hyprtonation) plays each tag as a
+just-intonated note and each view as a chord, reading the socket line above; it changes
+nothing here. Selecting the view already shown is announced to such companions as a separate
+`hyprdwmland-reselect` event, since the bar line does not change.
 
 ## Prior art and credit
 

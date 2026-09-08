@@ -161,3 +161,14 @@ selections (just-hyprtonation) heard nothing; the human found that unsettling ("
 feel like it didn't work"). `set_view` now also dispatches
 `hyprdwmland-reselect>><monitor>|v=<tags>` in that case. The bar widget and the waybar
 example filter on the `hyprdwmland>>` prefix and ignore it; verified on the socket.
+
+## Update after publication (2026-09-09, dev)
+
+Published and maintainer-verified at `e7559f5` on 2026-09-08. For the first update the AI
+proposed keeping the installer scripts out (as `dev` had them) so the baseline would come
+back `passed`; the human kept them ("since they've already been approved, there's no need
+to remove the installer scripts anymore", and their bytes are unchanged from the approved
+commit), so they are restored from `main` and the README leads with Omarchy's own commands
+and offers the scripts as the alternative. Also added at the human's "in principle yes":
+version 0.2.0, FAQ entries on mouse drags across monitors and on `focus_on_activate`, and a
+Companions section.
