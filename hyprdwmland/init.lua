@@ -50,6 +50,12 @@ local cfg = {
   },
   -- Seed per-tag layouts once from Omarchy's per-workspace files (workspace n -> tag n).
   omarchy_layouts_dir = HOME .. "/.local/state/omarchy/workspace-layouts",
+  -- dwm alttags: while the modifier is held the bar shows tag numbers in place of names.
+  -- Hyprland fires a bind on a lone modifier only at its release, so the engine polls
+  -- hl.is_key_down on these keycodes (evdev + 8: 133 left Super, 134 right Super) and
+  -- announces transitions as `hyprdwmland-mod>>down|up`. 0 disables the poll.
+  alttags_poll = 80,
+  alttags_keycodes = { 133, 134 },
 }
 
 -- ---------------------------------------------------------------------------------------
@@ -1876,6 +1882,19 @@ local function init()
   schedule_emit()
   if cfg.stray_sweep and cfg.stray_sweep > 0 then
     hl.timer(guard("stray sweep", adopt_strays), { timeout = cfg.stray_sweep, type = "repeat" })
+  end
+  if cfg.alttags_poll and cfg.alttags_poll > 0 then
+    local held = false
+    hl.timer(guard("alttags poll", function()
+      local down = false
+      for _, code in ipairs(cfg.alttags_keycodes or {}) do
+        if hl.is_key_down(code) then down = true break end
+      end
+      if down ~= held then
+        held = down
+        dispatch(hl.dsp.event("hyprdwmland-mod>>" .. (down and "down" or "up")))
+      end
+    end), { timeout = cfg.alttags_poll, type = "repeat" })
   end
   log("init done: %d monitor(s)", #monitors)
 end

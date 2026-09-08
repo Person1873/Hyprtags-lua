@@ -98,7 +98,8 @@ omarchy bar set person1873.hypr-dwm-land names '{"3":"web","4":"mail"}' --json
 ```
 
 Middle-click on the widget opens the naming pane; `omarchy-shell shell toggle
-person1873.hypr-dwm-land` does the same.
+person1873.hypr-dwm-land` does the same. Holding SUPER shows numbers in place of names
+(the engine announces `hyprdwmland-mod>>down|up`).
 
 ## Etiquette
 

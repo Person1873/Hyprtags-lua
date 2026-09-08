@@ -77,7 +77,10 @@ omarchy-shell shell toggle person1873.hypr-dwm-land     # the pane, from a key o
 ```
 
 Names are a setting of the widget in `~/.config/omarchy/shell.json`, not engine state: the
-keys, the socket line and other bars go on speaking in numbers.
+keys, the socket line and other bars go on speaking in numbers. Hold `SUPER` and the bar
+shows the numbers in place of the names for as long as it is held, dwm's `alttags`; the
+engine polls the Super keys every 80 ms for this (`alttags_poll = 0` turns it off,
+`alttags_keycodes` picks other keys) and announces `hyprdwmland-mod>>down|up` on the socket.
 
 ## Skills for agents
 

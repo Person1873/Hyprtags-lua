@@ -55,7 +55,10 @@ that was made by ear or by the user rather than by principle.
 - Tag matching is exact string equality; `hl.get_windows({ tag = })` matches the same way.
 - `hl.exec_cmd(cmd, { workspace = "102" })` spawns on a workspace.
 - Release binds match only the modifiers held at the press; `ignore_mods = true` frees a key
-  whatever the modifiers. `hl.is_key_down(keycode)` takes evdev + 8.
+  whatever the modifiers. `hl.is_key_down(keycode)` takes evdev + 8 and sees modifier keys
+  too (every press is pushed to the pressed-keys list before binds run).
+- A bind on a lone modifier (`SUPER + Super_L`) fires only at its release, and not at all
+  when another key was pressed in between; poll `is_key_down` to see a modifier go down.
 - Headless outputs (`hyprctl output create headless NAME`) are real monitors for testing.
 
 ## Testing

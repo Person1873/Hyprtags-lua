@@ -18,8 +18,11 @@ BarWidget {
 
   property int ntags: Number(setting("ntags", 21))
   readonly property var names: setting("names", {}) || {}
+  // dwm alttags: numbers while the modifier is held (engine event hyprdwmland-mod>>down|up)
+  property bool modHeld: false
 
   function nameOf(k) {
+    if (modHeld) return ""
     var n = names[String(k)]
     return n ? String(n) : ""
   }
@@ -141,6 +144,8 @@ BarWidget {
       if (event.name === "custom") {
         var d = String(event.data)
         if (d.indexOf("hyprdwmland>>") === 0) root.apply(d.substring("hyprdwmland>>".length))
+        else if (d === "hyprdwmland-mod>>down") root.modHeld = true
+        else if (d === "hyprdwmland-mod>>up") root.modHeld = false
       } else if (event.name === "configreloaded") {
         retry.restart()
       }

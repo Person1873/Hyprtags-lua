@@ -190,3 +190,17 @@ wtype landed in shell.json and the bar. Mouse editing in the pane was not exerci
 The human also asked for skills, "omarchy is also AI first": `agents/skills/hypr-dwm-land`
 (using it) and `agents/skills/hypr-dwm-land-dev` (working on it), linked the way Omarchy's
 migrations link its own skills into the agents' skill directories.
+
+## alttags (2026-09-09, dev)
+
+The human recalled dwm's alttags ("you held a key and it showed you the tag numbers") as
+the complement of names. First attempt, binds on `SUPER + Super_L` with and without the
+release flag: a capture of the human's presses showed Hyprland fires a lone-modifier bind
+only at release, both variants three milliseconds apart, and not at all when another key
+followed, so a bind cannot report the modifier going down. Second attempt, polling
+`hl.is_key_down`: the 0.56.2 keybind manager pushes every key press, modifiers included,
+into the pressed-keys list with keycode evdev + 8, so the engine polls 133 and 134 every
+80 ms and announces transitions; the widget shows numbers while down. The widget half was
+verified by injecting the event and screenshotting the bar; the poll half was written from
+the source while the human was away from the keyboard and is unverified until a real
+Super press is captured.
