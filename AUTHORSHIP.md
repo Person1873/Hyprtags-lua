@@ -153,3 +153,11 @@ Recorded because they are the kind of thing an AI gets confidently wrong:
   fallback ran) and a `window.destroy` handler that indexed a table with a nil address.
 - A test used a `pid:` selector and moved the wrong Brave window; `pid:` matches the first
   window of a process.
+
+## Reselect event (2026-09-08, dev)
+
+Selecting the view already shown left the bar line unchanged, so a companion that answers
+selections (just-hyprtonation) heard nothing; the human found that unsettling ("makes me
+feel like it didn't work"). `set_view` now also dispatches
+`hyprdwmland-reselect>><monitor>|v=<tags>` in that case. The bar widget and the waybar
+example filter on the `hyprdwmland>>` prefix and ignore it; verified on the socket.

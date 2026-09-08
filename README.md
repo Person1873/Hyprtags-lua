@@ -238,6 +238,13 @@ socket (`.socket2.sock`) whenever anything changes, as a `custom` event:
 custom>>hyprdwmland>>eDP-1|v=2,3|o=1:2,2:1,5:1|u=5|f=2
 ```
 
+Selecting the view already shown changes nothing above, so it is announced separately, for
+anything that answers a selection:
+
+```
+custom>>hyprdwmland-reselect>>eDP-1|v=2,3
+```
+
 | field | meaning |
 |---|---|
 | first field | monitor name |

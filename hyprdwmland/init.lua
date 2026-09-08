@@ -976,6 +976,10 @@ local function set_view(monname, newset, opts)
     -- still make sure the monitor is on its visible workspace
     fix_focus(monname)
     schedule_emit()
+    -- The bar line will not change, so anything that answers a selection (a sound, a
+    -- flash) gets its own event: hyprdwmland-reselect>><monitor>|v=<tags>.
+    dispatch(hl.dsp.event(string.format("hyprdwmland-reselect>>%s|v=%s", monname,
+      table.concat(sorted_keys(newset), ","))))
     return
   end
   remember_focus(monname)
