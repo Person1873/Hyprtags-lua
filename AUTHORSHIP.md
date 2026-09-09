@@ -207,3 +207,21 @@ enters the same pressed-keys list under keycode 9, so with the poll pointed at 9
 seconds a held virtual key produced `down` 35 ms after the press and `up` 50 ms after the
 release (Escape sunk by a throwaway bind meanwhile). What remains assumed is only that
 left and right Super are 133 and 134, KEY_LEFTMETA and KEY_RIGHTMETA plus eight.
+
+## Order on master tags (2026-09-09, dev)
+
+The human: "I thought we preserved window ordering per tag". The snapshot was right; the
+re-show assumed Hyprland's default `master.new_status = slave`, where a re-inserted window
+joins the stack, but Omarchy ships `new_status = master`, where every arrival becomes the
+master and the previous one heads the stack, so rank 1 then rank 2 came back as 2 over 1.
+The re-show now reads `master.new_status` and `new_on_top` through `hl.get_config` and
+inserts in the order that lands 1..N under each setting (reverse for master or inherit;
+rank 1 then the rest reversed for slave with new_on_top). Found alongside: the snapshot
+sorted by left-to-right position whatever the master orientation, which misreads centre,
+right and bottom; it now sorts by the orientation in force, with the widest tiled window as
+the centre master. First attempt broke every reconcile on a forward reference (the slot
+helper was defined below its first use); the engine log said so at once, and the fix is a
+forward declaration. Verified: two round trips off tag 1 (master, two windows) and back
+kept rank 1 as master both times, no failures logged. The human's reversal itself was not
+reproduced by the AI before the fix; the mechanism is from Omarchy's setting and Hyprland's
+documented behaviour.

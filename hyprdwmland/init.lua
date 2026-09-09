@@ -73,6 +73,7 @@ local busy = false
 local dirty = {}
 local emit_timer = nil
 local combo = { active = false, timer = nil }
+local layout_key           -- defined with the layout code below; used by the rank snapshot above it
 local log_lines = {}
 local lastfocus = {}      -- monname -> { [viewkey] = address }  (address of the window to refocus)
 local layouts = {}        -- monname -> { [slot] = { layout = name, opts = {...}|nil } }
@@ -94,6 +95,19 @@ end
 -- At most one toast per distinct message every `notify_every` seconds; the log keeps
 -- every occurrence.
 local notify_seen = {}
+-- Read a Hyprland option through hl.get_config, with a fallback when the call fails.
+local function config_string(key, fallback)
+  local ok, v = pcall(hl.get_config, key)
+  if ok and v ~= nil then return tostring(v) end
+  return fallback
+end
+
+local function config_bool(key, fallback)
+  local ok, v = pcall(hl.get_config, key)
+  if ok and v ~= nil then return v == true or v == "true" or v == 1 end
+  return fallback
+end
+
 local function notify(text)
   local key = text:sub(1, 60)
   local now = os.time()
@@ -543,16 +557,39 @@ end
 
 -- On-screen order: tiled before floating, then x then y (master first / stack top-down,
 -- dwindle left-to-right top-to-bottom).
-local function geometry_sorted(wins)
+local function geometry_sorted(wins, orientation)
   local items = {}
   for _, w in ipairs(wins) do
-    local at = w.at or {}
-    items[#items + 1] = { w = w, f = w.floating and 1 or 0, x = at.x or at[1] or 0, y = at.y or at[2] or 0 }
+    local at, sz = w.at or {}, w.size or {}
+    items[#items + 1] = { w = w, f = w.floating and 1 or 0, x = at.x or at[1] or 0, y = at.y or at[2] or 0,
+                          wd = sz.x or sz[1] or 0 }
+  end
+  -- Reading order for the master layout's orientations: the master area first, then the
+  -- stack in its own order. "left" is also the order for dwindle and scrolling (columns).
+  orientation = orientation or "left"
+  local function key(it)
+    if orientation == "right" then return -it.x, it.y end
+    if orientation == "top" then return it.y, it.x end
+    if orientation == "bottom" then return -it.y, it.x end
+    return it.x, it.y
+  end
+  local master_addr
+  if orientation == "center" then
+    -- the master is the widest tiled window; the stacks read left column then right
+    local best
+    for _, it in ipairs(items) do
+      if it.f == 0 and (not best or it.wd > best.wd) then best = it end
+    end
+    if best then master_addr = tostring(best.w.address) end
   end
   table.sort(items, function(a, b)
     if a.f ~= b.f then return a.f < b.f end
-    if math.abs(a.x - b.x) > 2 then return a.x < b.x end
-    if math.abs(a.y - b.y) > 2 then return a.y < b.y end
+    local am, bm = tostring(a.w.address) == master_addr, tostring(b.w.address) == master_addr
+    if am ~= bm then return am end
+    local a1, a2 = key(a)
+    local b1, b2 = key(b)
+    if math.abs(a1 - b1) > 2 then return a1 < b1 end
+    if math.abs(a2 - b2) > 2 then return a2 < b2 end
     return tostring(a.w.address) < tostring(b.w.address)
   end)
   local out = {}
@@ -611,10 +648,16 @@ local function snapshot_ranks(monname, tagset)
     if is_managed(w) then visible[#visible + 1] = w end
   end
   local ordered
-  if current_layout(monname) == "monocle" then
+  local cur = current_layout(monname)
+  if cur == "monocle" then
     ordered = rank_sorted(visible, tagset)
   else
-    ordered = geometry_sorted(visible)
+    local orientation
+    if cur == "master" then
+      local rec = layouts[monname] and layouts[monname][layout_key(tagset)]
+      orientation = (rec and rec.opts and rec.opts.orientation) or config_string("master.orientation", "left")
+    end
+    ordered = geometry_sorted(visible, orientation)
   end
   local counters = {}
   for _, w in ipairs(ordered) do
@@ -716,7 +759,7 @@ end
 
 -- dwm pertag slot for a view: the lowest selected tag, except the all-tags view which has
 -- a slot of its own. A combo therefore shows (and edits) its lowest tag's layout.
-local function layout_key(set)
+layout_key = function(set)
   if set_eq(set, all_tags()) then return "all" end
   return tostring(min_key(set) or 1)
 end
@@ -872,6 +915,26 @@ reconcile = function(monname, opts, depth)
       if a.r ~= b.r then return a.r < b.r end
       return tostring(a.w.address) < tostring(b.w.address)
     end)
+    -- The master layout decides where a new window lands from master.new_status and
+    -- new_on_top, not from focus. Omarchy ships new_status = "master": each arrival becomes
+    -- master and the old one heads the stack, so inserting rank N first and rank 1 last
+    -- reproduces 1..N. With "slave", rank 1 first; new_on_top then wants the rest reversed.
+    local rec = layouts[monname] and layouts[monname][layout_key(view[monname])]
+    local target = (rec and rec.layout) or current_layout(monname)
+    if target == "master" and #show > 1 then
+      local status = config_string("master.new_status", "slave")
+      local on_top = config_bool("master.new_on_top", false)
+      if status == "master" or status == "inherit" then
+        local rev = {}
+        for i = #show, 1, -1 do rev[#rev + 1] = show[i] end
+        show = rev
+      elseif on_top then
+        local first, rest = show[1], {}
+        for i = #show, 2, -1 do rest[#rest + 1] = show[i] end
+        show = { first }
+        for _, it in ipairs(rest) do show[#show + 1] = it end
+      end
+    end
     for _, it in ipairs(show) do
       dispatch(hl.dsp.window.move({ workspace = p.vis, follow = false, window = wsel(it.w) }))
       -- chain focus so dwindle inserts the next one relative to this one

@@ -31,8 +31,10 @@ that was made by ear or by the user rather than by principle.
 - **Reconcile**: `reconcile(mon, opts)` moves mismatched windows between the pair with
   `follow = false`, re-shows in rank order with chained focus, restores fullscreen, then
   `fix_focus`. Guarded by `busy` and a per-monitor `dirty` re-run.
-- **Ranks**: `snapshot_ranks` records stack position from geometry when a window is hidden;
-  under monocle existing ranks are kept.
+- **Ranks**: `snapshot_ranks` records stack position from geometry when a window is hidden,
+  read in the master orientation's order (centre: widest window is the master); under
+  monocle existing ranks are kept. Re-show order depends on `master.new_status` (Omarchy
+  ships `master`: insert rank N first) and `new_on_top`, read with `hl.get_config`.
 - **Layouts**: per view slot (`layout_key`: lowest tag, or `all`), applied by workspace rule
   (lands ~300 ms later, async; `layout_settling` stops recording the transient).
 - **Events**: `hl.on(...)` handlers for open/close/destroy/active/urgent/move/workspace
