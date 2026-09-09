@@ -259,6 +259,9 @@ while the compositor was frozen for the human's own Hyprland rebuild, so this is
 the restore used `hl.dsp.window.fullscreen`, whose default action is toggle, so whenever the
 move itself left the window fullscreen the restore turned it off; and the mode mapping was
 inverted (`Fullscreen::eFullscreenMode` is 1 maximized, 2 fullscreen). The restore now uses
-`fullscreen_state` with `action = "set"` and both recorded modes (internal and client).
+`fullscreen_state` with `action = "set"` and both recorded modes (internal and client),
+recorded whenever either is non-zero: the human pointed out the pseudo-fullscreen case, an
+app in its own fullscreen that the compositor still frames (internal 0, client 2), which the
+first version of the fix would have skipped.
 Written in a separate worktree so the running config was not reloaded; to be tested with a
 fullscreen window across a hide and re-show once the freeze lifts.

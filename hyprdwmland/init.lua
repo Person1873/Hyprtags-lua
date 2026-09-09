@@ -946,8 +946,10 @@ reconcile = function(monname, opts, depth)
     for _, w in ipairs(hide) do
       -- HL.Window.fullscreen is the internal mode (Fullscreen::eFullscreenMode: 0 none,
       -- 1 maximized, 2 fullscreen); fullscreen_client is what the app asked for.
-      local f = w.fullscreen
-      if f and f ~= 0 then fs_state[w.address] = { f, w.fullscreen_client or f } end
+      -- Either alone counts: an app in F11 "fullscreen" that the compositor still frames
+      -- is internal 0, client 2, and must come back that way.
+      local f, fc = w.fullscreen or 0, w.fullscreen_client or 0
+      if f ~= 0 or fc ~= 0 then fs_state[w.address] = { f, fc } end
       dispatch(hl.dsp.window.move({ workspace = p.hid, follow = false, window = wsel(w) }))
     end
 
