@@ -251,3 +251,14 @@ workspace reports the new algorithm, with a per-monitor token so a faster view c
 supersedes a pending one. After the change all four layouts pass at ten windows, dwindle
 cell-for-cell, no failures logged. The earlier "layout lands ~300 ms later" note in this file
 described the orientation nudge, not the rule.
+
+## Fullscreen across a hide (2026-09-09, dev, untested)
+
+The human: "fullscreened windows return back in the layout". Read from the 0.56.2 source
+while the compositor was frozen for the human's own Hyprland rebuild, so this is unverified:
+the restore used `hl.dsp.window.fullscreen`, whose default action is toggle, so whenever the
+move itself left the window fullscreen the restore turned it off; and the mode mapping was
+inverted (`Fullscreen::eFullscreenMode` is 1 maximized, 2 fullscreen). The restore now uses
+`fullscreen_state` with `action = "set"` and both recorded modes (internal and client).
+Written in a separate worktree so the running config was not reloaded; to be tested with a
+fullscreen window across a hide and re-show once the freeze lifts.

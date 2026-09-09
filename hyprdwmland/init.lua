@@ -944,8 +944,10 @@ reconcile = function(monname, opts, depth)
     end
 
     for _, w in ipairs(hide) do
+      -- HL.Window.fullscreen is the internal mode (Fullscreen::eFullscreenMode: 0 none,
+      -- 1 maximized, 2 fullscreen); fullscreen_client is what the app asked for.
       local f = w.fullscreen
-      if f and f ~= 0 then fs_state[w.address] = f end
+      if f and f ~= 0 then fs_state[w.address] = { f, w.fullscreen_client or f } end
       dispatch(hl.dsp.window.move({ workspace = p.hid, follow = false, window = wsel(w) }))
     end
 
@@ -1002,8 +1004,10 @@ reconcile = function(monname, opts, depth)
       local f = fs_state[it.w.address]
       if f then
         fs_state[it.w.address] = nil
-        local mode = (f == 2) and "maximized" or "fullscreen"
-        dispatch(hl.dsp.window.fullscreen({ mode = mode, window = wsel(it.w) }))
+        -- Set, never toggle: `fullscreen` defaults to toggle, so if the move had left the
+        -- window fullscreen the restore un-fullscreened it ("fullscreened windows return
+        -- back in the layout"). fullscreen_state restores both modes as recorded.
+        dispatch(hl.dsp.window.fullscreen_state({ internal = f[1], client = f[2], action = "set", window = wsel(it.w) }))
       end
     end
 
