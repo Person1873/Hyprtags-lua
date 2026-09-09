@@ -265,3 +265,16 @@ app in its own fullscreen that the compositor still frames (internal 0, client 2
 first version of the fix would have skipped.
 Written in a separate worktree so the running config was not reloaded; to be tested with a
 fullscreen window across a hide and re-show once the freeze lifts.
+
+## Installer bug from the Omarchy Discord (2026-09-09, dev)
+
+Reported to the human by someone on the Omarchy Discord: the published quick start runs
+`omarchy plugin add … --enable`, which puts the widget in the bar, and `install.sh` then
+skipped its whole workspaces swap because the plugin id was already in `shell.json`, leaving
+the workspace numbers beside the tags. Confirmed by reading `main`. Step 2 is now idempotent:
+if the workspaces widget is in a bar section it is replaced by this widget and any other
+copy of the widget in that section is dropped, the plugin is registered once, and the file
+and its backup are only written when something changes. Checked offline with jq against a
+fresh layout, the post-`--enable` layout, an already-swapped layout (unchanged), and the
+author's live file (unchanged, tag names intact). Not run end to end during the compositor
+freeze.

@@ -49,11 +49,21 @@ omarchy plugin validate "$PLUG"
 omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
 
 # 2. shell.json: swap omarchy.workspaces for this widget and register the plugin.
-if [[ -f $SHELLJSON ]] && ! grep -q "\"$ID\"" "$SHELLJSON"; then
-  cp -- "$SHELLJSON" "$SHELLJSON.bak.$stamp"
-  "$JQ" --arg id "$ID" '(.bar.layout |= with_entries(.value |= map(if .id=="omarchy.workspaces" then {id:$id} else . end)))
-      | (.plugins |= ((. // []) | if any(.[]; .id==$id) then . else . + [{id:$id}] end))' \
-    "$SHELLJSON" | replace_file "$SHELLJSON"
+#    Idempotent: `omarchy plugin add --enable` may already have put the widget in the bar,
+#    in which case the workspaces widget still has to go and ours takes its place (the copy
+#    --enable added is dropped so the widget appears once). Nothing changes when there is
+#    nothing to do, so the backup is only written when the file is rewritten.
+if [[ -f $SHELLJSON ]]; then
+  new=$("$JQ" --arg id "$ID" '
+    def swap: if any(.[]; .id=="omarchy.workspaces")
+              then map(select(.id != $id)) | map(if .id=="omarchy.workspaces" then {id:$id} else . end)
+              else . end;
+    (.bar.layout |= with_entries(.value |= (if type=="array" then swap else . end)))
+    | (.plugins |= ((. // []) | if any(.[]; .id==$id) then . else . + [{id:$id}] end))' "$SHELLJSON")
+  if [[ -n $new ]] && ! "$JQ" -e --argjson a "$new" '. == $a' "$SHELLJSON" >/dev/null 2>&1; then
+    cp -- "$SHELLJSON" "$SHELLJSON.bak.$stamp"
+    printf '%s\n' "$new" | replace_file "$SHELLJSON"
+  fi
 fi
 
 # 3. hyprland.lua: one marked block, refused if a marker is already present.
