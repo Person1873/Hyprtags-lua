@@ -73,6 +73,7 @@ local busy = false
 local dirty = {}
 local emit_timer = nil
 local combo = { active = false, timer = nil }
+local view_token = {}      -- monname -> counter; a pending deferred reconcile checks it
 local layout_key           -- defined with the layout code below; used by the rank snapshot above it
 local log_lines = {}
 local lastfocus = {}      -- monname -> { [viewkey] = address }  (address of the window to refocus)
@@ -1110,12 +1111,38 @@ local function set_view(monname, newset, opts)
   end
   remember_focus(monname)
   remember_layout(monname)
+  -- Ranks are read from geometry, so take them before the new view's layout re-arranges
+  -- the visible workspace.
+  snapshot_ranks(monname, cur)
   prev[monname] = set_copy(cur)
   view[monname] = set_copy(newset)
   local remembered = lastfocus[monname] and lastfocus[monname][view_key(newset)]
   apply_view_layout(monname)
   save_state()
-  reconcile(monname, { old_view = cur, prefer = (opts and opts.prefer) or remembered })
+  local prefer = (opts and opts.prefer) or remembered
+  -- A workspace rule lands on the next tick, not within this call. Re-showing under the
+  -- outgoing algorithm let the switch re-arrange the windows from the wrong order (every
+  -- arrival anchored on the first window under scrolling and dwindle; measured). Wait for
+  -- the visible workspace to report the new algorithm, then reconcile; a newer view change
+  -- for the monitor supersedes a pending one.
+  local rec = layouts[monname] and layouts[monname][layout_key(newset)]
+  local target = rec and rec.layout
+  view_token[monname] = (view_token[monname] or 0) + 1
+  local token = view_token[monname]
+  local tries = 0
+  local function ready()
+    return not target or current_layout(monname) == target or tries >= 30
+  end
+  local function go()
+    if view_token[monname] ~= token then return end
+    if ready() then
+      reconcile(monname, { prefer = prefer })
+    else
+      tries = tries + 1
+      hl.timer(guard("view settle", go), { timeout = 8, type = "oneshot" })
+    end
+  end
+  go()
 end
 
 local function assign_tags(w, members, monname)

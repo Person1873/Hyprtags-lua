@@ -233,3 +233,21 @@ forward declaration. Verified: two round trips off tag 1 (master, two windows) a
 kept rank 1 as master both times, no failures logged. The human's reversal itself was not
 reproduced by the AI before the fix; the mechanism is from Omarchy's setting and Hyprland's
 documented behaviour.
+
+## Order at ten windows, and the layout-switch race (2026-09-09, dev)
+
+The human: "you should check up to 10 windows because the ordering gets interesting". A
+harness (`tests/order-roundtrip.sh`) spawns N windows on a tag, hides and re-shows twice,
+and compares every window's cell. Masters passed at 4, 7 and 10 in every orientation;
+scrolling and dwindle failed at 10: under scrolling every arrival landed right after the
+first column and the order mirrored on each pass, under dwindle the tree changed each time.
+Both algorithms place an arrival relative to the focused window, and the chained focus was
+proven to work in isolation, so the difference lay in the real path: `set_view` applied the
+new view's layout by workspace rule and reconciled in the same call, but a rule lands on the
+next tick (measured: one 5 ms poll), so the re-show ran under the outgoing algorithm and the
+switch then re-arranged the windows from its own order. `set_view` now snapshots the old
+view's ranks first, applies the layout, and runs the hide and re-show once the visible
+workspace reports the new algorithm, with a per-monitor token so a faster view change
+supersedes a pending one. After the change all four layouts pass at ten windows, dwindle
+cell-for-cell, no failures logged. The earlier "layout lands ~300 ms later" note in this file
+described the orientation nudge, not the rule.

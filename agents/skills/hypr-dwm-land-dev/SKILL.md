@@ -38,8 +38,11 @@ that was made by ear or by the user rather than by principle.
   `MasterAlgorithm::addTarget`: the arrival is appended (prepended with `new_on_top`) then
   marked, so with Omarchy's `new_status = master` ranks 2..N go in first and rank 1 last.
   Read the options with `hl.get_config`; test with three windows, two cannot tell.
-- **Layouts**: per view slot (`layout_key`: lowest tag, or `all`), applied by workspace rule
-  (lands ~300 ms later, async; `layout_settling` stops recording the transient).
+- **Layouts**: per view slot (`layout_key`: lowest tag, or `all`), applied by workspace rule.
+  The rule lands on the next tick, not in the same call: `set_view` snapshots ranks, applies
+  the layout, then defers the reconcile until `tiled_layout` reports the new algorithm
+  (`view_token` lets a newer view change supersede it). `layout_settling` stops recording
+  the transient while the orientation nudge (~400 ms) runs.
 - **Events**: `hl.on(...)` handlers for open/close/destroy/active/urgent/move/workspace
   active/config reload/monitor add-remove/workspace move-to-monitor. Window handles can be
   dead by the time a handler runs: read `address` under `pcall`.
@@ -77,6 +80,9 @@ that was made by ear or by the user rather than by principle.
   component stale. A panel entry point in a subdirectory failed to load ("File name case
   mismatch"); keep QML entry points where the manifest already puts them.
 - `wtype` drives a focused Quickshell surface but not Hyprland binds.
+- `tests/order-roundtrip.sh <tag> <count> <label>` checks that every window returns to its
+  cell after a hide and re-show; run it with 10 windows on each layout you touched. It flips
+  the view.
 - `omarchy plugin validate .` before committing; it prints nothing on success.
 
 ## Release
