@@ -53,6 +53,23 @@ that was made by ear or by the user rather than by principle.
 - **Keys**: `bind/unbind/rebind` with failures collected for `debug()`; the keys module is
   named in `setup({ keys = "module" })` and required through `package.path`.
 
+## State and authority
+
+Every bug found in the first week was a cached copy of state that has an authority elsewhere.
+Before adding a variable that mirrors something, name the authority and read it at the
+moment of use; if the authority answers asynchronously, wait for its answer instead of
+assuming it. The map so far:
+
+| state | authority | do not trust |
+|---|---|---|
+| tag membership and rank | Hyprland's window tags | any list kept in Lua |
+| stack order | geometry at the moment of hiding | a live order maintained from events |
+| the workspace's layout | `ws.tiled_layout`, one tick after the rule | the rule you just sent |
+| focus | `hl.get_active_window()` | the window you last focused |
+| view, previous view, per-tag layout | the state file, checked against reality on load | memory across a reload |
+| tag names | `shell.json` (watched) | the settings object a pane was handed |
+| companions' mute and instrument | their state files | anything remembered in a UI |
+
 ## Verified Hyprland facts (0.56.x), do not re-derive
 
 - The Lua state is destroyed on every tracked-file change; `hl.on`, timers, binds and
