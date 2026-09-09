@@ -201,6 +201,9 @@ followed, so a bind cannot report the modifier going down. Second attempt, polli
 `hl.is_key_down`: the 0.56.2 keybind manager pushes every key press, modifiers included,
 into the pressed-keys list with keycode evdev + 8, so the engine polls 133 and 134 every
 80 ms and announces transitions; the widget shows numbers while down. The widget half was
-verified by injecting the event and screenshotting the bar; the poll half was written from
-the source while the human was away from the keyboard and is unverified until a real
-Super press is captured.
+verified by injecting the event and screenshotting the bar. The poll half was written from
+the source while the human was away, then verified without hands: wtype's virtual key
+enters the same pressed-keys list under keycode 9, so with the poll pointed at 9 for two
+seconds a held virtual key produced `down` 35 ms after the press and `up` 50 ms after the
+release (Escape sunk by a throwaway bind meanwhile). What remains assumed is only that
+left and right Super are 133 and 134, KEY_LEFTMETA and KEY_RIGHTMETA plus eight.
