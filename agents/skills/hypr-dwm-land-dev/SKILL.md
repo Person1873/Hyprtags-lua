@@ -32,9 +32,12 @@ that was made by ear or by the user rather than by principle.
   `follow = false`, re-shows in rank order with chained focus, restores fullscreen, then
   `fix_focus`. Guarded by `busy` and a per-monitor `dirty` re-run.
 - **Ranks**: `snapshot_ranks` records stack position from geometry when a window is hidden,
-  read in the master orientation's order (centre: widest window is the master); under
-  monocle existing ranks are kept. Re-show order depends on `master.new_status` (Omarchy
-  ships `master`: insert rank N first) and `new_on_top`, read with `hl.get_config`.
+  read in the master orientation's order (centre: middle column is the master, slaves
+  alternate columns from `center_master_fallback`, below `slave_count_for_center_master`
+  the fallback side applies); under monocle existing ranks are kept. Re-show order follows
+  `MasterAlgorithm::addTarget`: the arrival is appended (prepended with `new_on_top`) then
+  marked, so with Omarchy's `new_status = master` ranks 2..N go in first and rank 1 last.
+  Read the options with `hl.get_config`; test with three windows, two cannot tell.
 - **Layouts**: per view slot (`layout_key`: lowest tag, or `all`), applied by workspace rule
   (lands ~300 ms later, async; `layout_settling` stops recording the transient).
 - **Events**: `hl.on(...)` handlers for open/close/destroy/active/urgent/move/workspace

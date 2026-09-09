@@ -566,32 +566,70 @@ local function geometry_sorted(wins, orientation)
   end
   -- Reading order for the master layout's orientations: the master area first, then the
   -- stack in its own order. "left" is also the order for dwindle and scrolling (columns).
+  -- Centre (from MasterAlgorithm.cpp, 0.56.2): below master.slave_count_for_center_master
+  -- slaves the layout is the fallback side; at or above it the master column is in the
+  -- middle and slaves alternate columns starting from the fallback side, each column top
+  -- to bottom.
   orientation = orientation or "left"
+  local tiled = 0
+  for _, it in ipairs(items) do if it.f == 0 then tiled = tiled + 1 end end
+  local fallback = config_string("master.center_master_fallback", "left")
+  if fallback ~= "right" and fallback ~= "top" and fallback ~= "bottom" then fallback = "left" end
+  local centred = false
+  if orientation == "center" then
+    local threshold = tonumber(config_string("master.slave_count_for_center_master", "2")) or 2
+    centred = (tiled - 1) >= threshold
+    if not centred then orientation = fallback end
+  end
   local function key(it)
     if orientation == "right" then return -it.x, it.y end
     if orientation == "top" then return it.y, it.x end
     if orientation == "bottom" then return -it.y, it.x end
     return it.x, it.y
   end
-  local master_addr
-  if orientation == "center" then
-    -- the master is the widest tiled window; the stacks read left column then right
-    local best
-    for _, it in ipairs(items) do
-      if it.f == 0 and (not best or it.wd > best.wd) then best = it end
-    end
-    if best then master_addr = tostring(best.w.address) end
-  end
-  table.sort(items, function(a, b)
-    if a.f ~= b.f then return a.f < b.f end
-    local am, bm = tostring(a.w.address) == master_addr, tostring(b.w.address) == master_addr
-    if am ~= bm then return am end
-    local a1, a2 = key(a)
-    local b1, b2 = key(b)
-    if math.abs(a1 - b1) > 2 then return a1 < b1 end
-    if math.abs(a2 - b2) > 2 then return a2 < b2 end
+  local function byy(a, b)
+    if math.abs(a.y - b.y) > 2 then return a.y < b.y end
     return tostring(a.w.address) < tostring(b.w.address)
-  end)
+  end
+  if centred then
+    -- three columns by x: left stack, master(s), right stack
+    local minx, maxx = math.huge, -math.huge
+    for _, it in ipairs(items) do
+      if it.f == 0 then
+        if it.x < minx then minx = it.x end
+        if it.x > maxx then maxx = it.x end
+      end
+    end
+    local L, M, R, F = {}, {}, {}, {}
+    for _, it in ipairs(items) do
+      if it.f ~= 0 then F[#F + 1] = it
+      elseif math.abs(it.x - minx) <= 2 then L[#L + 1] = it
+      elseif math.abs(it.x - maxx) <= 2 then R[#R + 1] = it
+      else M[#M + 1] = it end
+    end
+    table.sort(L, byy) table.sort(M, byy) table.sort(R, byy) table.sort(F, byy)
+    local ordered = {}
+    for _, it in ipairs(M) do ordered[#ordered + 1] = it end
+    local first, second = L, R
+    if fallback == "right" then first, second = R, L end
+    local i = 1
+    while first[i] or second[i] do
+      if first[i] then ordered[#ordered + 1] = first[i] end
+      if second[i] then ordered[#ordered + 1] = second[i] end
+      i = i + 1
+    end
+    for _, it in ipairs(F) do ordered[#ordered + 1] = it end
+    items = ordered
+  else
+    table.sort(items, function(a, b)
+      if a.f ~= b.f then return a.f < b.f end
+      local a1, a2 = key(a)
+      local b1, b2 = key(b)
+      if math.abs(a1 - b1) > 2 then return a1 < b1 end
+      if math.abs(a2 - b2) > 2 then return a2 < b2 end
+      return tostring(a.w.address) < tostring(b.w.address)
+    end)
+  end
   local out = {}
   for i, it in ipairs(items) do out[i] = it.w end
   return out
@@ -916,24 +954,43 @@ reconcile = function(monname, opts, depth)
       return tostring(a.w.address) < tostring(b.w.address)
     end)
     -- The master layout decides where a new window lands from master.new_status and
-    -- new_on_top, not from focus. Omarchy ships new_status = "master": each arrival becomes
-    -- master and the old one heads the stack, so inserting rank N first and rank 1 last
-    -- reproduces 1..N. With "slave", rank 1 first; new_on_top then wants the rest reversed.
+    -- new_on_top, not from focus. Omarchy ships new_status = "master": each arrival is
+    -- appended to the node list and becomes the master, the previous master turning into
+    -- the last slave (measured: three windows, slaves kept their order, the old master
+    -- joined the end). So ranks 2..N go in first, in order, and rank 1 last. With "slave",
+    -- rank 1 first; new_on_top then wants the rest reversed.
     local rec = layouts[monname] and layouts[monname][layout_key(view[monname])]
     local target = (rec and rec.layout) or current_layout(monname)
     if target == "master" and #show > 1 then
       local status = config_string("master.new_status", "slave")
       local on_top = config_bool("master.new_on_top", false)
+      local on_active = config_string("master.new_on_active", "none")
+      -- MasterAlgorithm::addTarget: the node is appended (new_on_top: prepended; a slave
+      -- with new_on_active before/after: beside the focused node), then marked master or
+      -- slave. Work out the arrival order that leaves the node list as r1, r2 .. rN.
+      local rest_reversed
       if status == "master" or status == "inherit" then
-        local rev = {}
-        for i = #show, 1, -1 do rev[#rev + 1] = show[i] end
-        show = rev
-      elseif on_top then
-        local first, rest = show[1], {}
-        for i = #show, 2, -1 do rest[#rest + 1] = show[i] end
-        show = { first }
-        for _, it in ipairs(rest) do show[#show + 1] = it end
+        rest_reversed = on_top            -- prepends: feed the slaves backwards
+      else
+        rest_reversed = on_top or on_active == "before"
       end
+      local order = {}
+      if status == "master" or status == "inherit" then
+        if rest_reversed then
+          for i = #show, 2, -1 do order[#order + 1] = show[i] end
+        else
+          for i = 2, #show do order[#order + 1] = show[i] end
+        end
+        order[#order + 1] = show[1]       -- the last arrival is the master
+      else
+        order[1] = show[1]                -- alone, so it is the master
+        if rest_reversed then
+          for i = #show, 2, -1 do order[#order + 1] = show[i] end
+        else
+          for i = 2, #show do order[#order + 1] = show[i] end
+        end
+      end
+      show = order
     end
     for _, it in ipairs(show) do
       dispatch(hl.dsp.window.move({ workspace = p.vis, follow = false, window = wsel(it.w) }))

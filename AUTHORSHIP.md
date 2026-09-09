@@ -215,11 +215,19 @@ re-show assumed Hyprland's default `master.new_status = slave`, where a re-inser
 joins the stack, but Omarchy ships `new_status = master`, where every arrival becomes the
 master and the previous one heads the stack, so rank 1 then rank 2 came back as 2 over 1.
 The re-show now reads `master.new_status` and `new_on_top` through `hl.get_config` and
-inserts in the order that lands 1..N under each setting (reverse for master or inherit;
-rank 1 then the rest reversed for slave with new_on_top). Found alongside: the snapshot
+inserts in the order that lands 1..N under each setting. The first version reversed the
+whole list for `master`; a three-window test on the centre-master tag showed the master
+stable and the two slaves swapping sides on every round trip, and `MasterAlgorithm.cpp`
+explained it: the arrival is appended (or prepended with `new_on_top`) and only then marked
+master, the old master staying put. So ranks 2..N go in first, in order, and rank 1 last;
+`new_on_top` and `new_on_active = before` reverse the slave run. Three further round trips
+on centre master and two on left master came back identical. Found alongside: the snapshot
 sorted by left-to-right position whatever the master orientation, which misreads centre,
-right and bottom; it now sorts by the orientation in force, with the widest tiled window as
-the centre master. First attempt broke every reconcile on a forward reference (the slot
+right and bottom; it now sorts by the orientation in force. Centre is read as the source lays it out:
+below `slave_count_for_center_master` slaves the fallback side applies; at or above it the
+middle column is the master and slaves alternate columns from the fallback side, each
+column top to bottom. The human had written the centre orientation's alternation and
+remembered its shape ("if n%2 then right else left"), which pointed at the source. First attempt broke every reconcile on a forward reference (the slot
 helper was defined below its first use); the engine log said so at once, and the fix is a
 forward declaration. Verified: two round trips off tag 1 (master, two windows) and back
 kept rank 1 as master both times, no failures logged. The human's reversal itself was not
