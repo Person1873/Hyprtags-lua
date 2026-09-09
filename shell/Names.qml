@@ -20,13 +20,44 @@ Panel {
   property var hostWidget: null
   readonly property var barIdentity: hostWidget || root
   property int ntags: 21
-  readonly property var names: setting("names", {}) || {}
   readonly property int maxLength: 24
+  // The names come from shell.json itself, watched, not from the settings object handed
+  // to this pane: that copy went stale after the first change and every later save
+  // merged into it, so a rename snapped back and old names came back on other tags.
+  readonly property string shellJson: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/omarchy/shell.json"
+  property var names: ({})
+
+  function readNames(text) {
+    try {
+      var cfg = JSON.parse(text || "{}")
+      var layout = (cfg.bar && cfg.bar.layout) || {}
+      for (var section in layout) {
+        var entries = layout[section]
+        if (!Array.isArray(entries)) continue
+        for (var i = 0; i < entries.length; i++) {
+          var e = entries[i]
+          if (e && e.id === root.moduleName) return (e.names && typeof e.names === "object") ? e.names : {}
+        }
+      }
+    } catch (err) {}
+    return {}
+  }
+
+  FileView {
+    id: shellFile
+    path: root.shellJson
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: root.names = root.readNames(text())
+    onLoadFailed: root.names = ({})
+  }
 
   property var fields: []
   property bool editing: false
 
   function open() {
+    shellFile.reload()
     root.controller.show()
     // land in the first field: Tab / Shift+Tab walk the fields, Return saves, Escape closes
     Qt.callLater(function() { if (root.opened && fields.length > 0) fields[0].forceActiveFocus() })

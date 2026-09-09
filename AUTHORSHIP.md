@@ -278,3 +278,14 @@ and its backup are only written when something changes. Checked offline with jq 
 fresh layout, the post-`--enable` layout, an already-swapped layout (unchanged), and the
 author's live file (unchanged, tag names intact). Not run end to end during the compositor
 freeze.
+
+## Renaming a named tag (2026-09-09, dev)
+
+The human: "you can't rename a named tag". Reproduced by keyboard: the pane worked from
+the settings object handed to it when first loaded, which went stale after the first change;
+every later save merged into that old map, so a rename snapped back in the field and old
+names came back on other tags (the test resurrected a name the human had already changed).
+The pane now reads the names from `shell.json` itself through a watched FileView and
+re-reads on open. Verified: a tag renamed and renamed back by keyboard with the other names
+untouched. A stray character from wtype's keymap switching landed in another field during
+the test and was restored by hand; that is the test tool, not the pane.
